@@ -195,7 +195,8 @@ export async function fetchMissionSnapshot(token: string): Promise<MissionSnapsh
     ? approvals.filter((a) => a.action_id === verifiedFix.id)
     : [];
   const pendingApproval = openApprovals.some((a) => a.status === 'pending');
-  const deniedApproval = openApprovals.some((a) => a.status === 'denied');
+  const deniedApproval =
+    openApprovals.some((a) => a.status === 'denied') && !pendingApproval;
 
   return {
     health,

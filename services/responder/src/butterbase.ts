@@ -159,7 +159,7 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
   if (
     process.env.DEMO_AUTO_CREDITS === '1' &&
     account!.apply_credits <= 0 &&
-    account!.plan === 'free'
+    (account!.plan === 'free' || account!.plan === 'demo')
   ) {
     const updated = await client
       .from<AccountRow>('accounts')
@@ -168,6 +168,10 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
     if (!updated.error) {
       account = { ...account!, apply_credits: PLAN_CREDITS, plan: 'demo' };
       log('demo_credits_granted', { user_id: userId, apply_credits: PLAN_CREDITS });
+    } else {
+      log('demo_credits_grant_failed', { user_id: userId, error: updated.error });
+      // Butterbase may block accounts updates (404) — still surface demo credits in the UI.
+      account = { ...account!, apply_credits: PLAN_CREDITS, plan: 'demo' };
     }
   }
 
@@ -312,6 +316,13 @@ export async function actionWithIncident(
 export async function spendCredit(token: string): Promise<{ remaining: number }> {
   const account = await ensureAccount(token);
   if (account.apply_credits <= 0) throw new PaywallError();
+
+  // Demo mode: credits may be synthetic if Butterbase accounts writes are blocked.
+  if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
+    const remaining = account.apply_credits - 1;
+    log('demo_credit_spent', { user_id: account.user_id, remaining });
+    return { remaining };
+  }
 
   const client = userClient(token);
   const updated = await client
