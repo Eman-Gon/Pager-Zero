@@ -38,6 +38,11 @@ log('graph_built', {
 const app = Fastify();
 registerCors(app);
 
+// Scan-loop state surfaced on /incident so "ok" can't mean "never scanned".
+let lastHead: string | null = null;
+let lastScanAt: string | null = null;
+let lastScanError: string | null = null;
+
 app.get('/incident', async () => {
   const session = openSession(driver);
   try {
@@ -48,13 +53,22 @@ app.get('/incident', async () => {
       await session.run(`MATCH (f:Function {changed:true}) RETURN f.name AS name ORDER BY name`)
     ).records.map((r) => r.get('name'));
 
+    // Scan freshness: "ok" is only trustworthy after a scan has completed, and
+    // a repeatedly failing scan loop must be visible, not silently stale.
+    const scanMeta = {
+      scanned_head: lastHead,
+      last_scan_at: lastScanAt,
+      last_scan_error: lastScanError,
+    };
+
     if (failingTests.length === 0) {
       return {
-        status: 'ok',
+        status: lastHead ? 'ok' : 'unscanned',
         failing_tests: [],
         changed_functions: changedFunctions,
         root_cause: null,
         blast_radius: [],
+        ...scanMeta,
       };
     }
 
@@ -81,6 +95,9 @@ app.get('/incident', async () => {
       changed_functions: changedFunctions,
       root_cause: rootCause,
       blast_radius: blastRadius,
+      scanned_head: lastHead,
+      last_scan_at: lastScanAt,
+      last_scan_error: lastScanError,
     };
   } finally {
     await session.close();
@@ -92,7 +109,6 @@ log('listening', { port: PORT });
 
 await ensureTargetDeps(TARGET_DIR);
 
-let lastHead: string | null = null;
 for (;;) {
   try {
     const head = await gitHead(TARGET_DIR);
@@ -100,10 +116,13 @@ for (;;) {
       log('scan_start', { head });
       await scan(driver, TARGET_DIR);
       lastHead = head;
+      lastScanAt = new Date().toISOString();
+      lastScanError = null;
       log('scan_done', { head });
     }
   } catch (err) {
-    log('scan_error', { error: String(err) });
+    lastScanError = String(err);
+    log('scan_error', { error: lastScanError });
   }
   await new Promise((r) => setTimeout(r, 2000));
 }

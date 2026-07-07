@@ -372,7 +372,8 @@ export class DiagnosisPipeline {
     try {
       const token = await this.loadPipeline('query');
       return { token, kind: 'query' };
-    } catch {
+    } catch (err) {
+      log('rocketride_query_pipe_load_failed', { error: String(err), fallback: LEGACY_PIPELINE_PATH });
       const { token } = await this.client.use({ filepath: LEGACY_PIPELINE_PATH });
       this.pipelineToken = token;
       this.activePipeline = 'query';

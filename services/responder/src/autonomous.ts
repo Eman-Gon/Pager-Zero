@@ -11,7 +11,8 @@ import type { Incident } from './context.js';
 // open a PR.
 
 const SERVICE_EMAIL = process.env.SERVICE_EMAIL ?? 'oncall@rescueops.dev';
-const SERVICE_PASSWORD = process.env.SERVICE_PASSWORD ?? 'Resc!ue0ps2026';
+// No baked-in credential: autonomous mode requires SERVICE_PASSWORD from env.
+const SERVICE_PASSWORD = process.env.SERVICE_PASSWORD ?? '';
 const POLL_MS = Math.max(Number(process.env.AUTONOMOUS_POLL_MS ?? 5000), 1000);
 
 // A stable fingerprint for an incident, so we handle each one exactly once and

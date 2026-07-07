@@ -28,8 +28,11 @@ export async function gitHead(targetDir: string): Promise<string> {
   return stdout.trim();
 }
 
+// Known-good baseline ref the diff is taken against (tag `good` by convention).
+const BASELINE_REF = process.env.BASELINE_REF ?? 'good';
+
 async function changedFiles(targetDir: string): Promise<string[]> {
-  const { stdout } = await run('git', ['-C', targetDir, 'diff', '--name-only', 'good..HEAD']);
+  const { stdout } = await run('git', ['-C', targetDir, 'diff', '--name-only', `${BASELINE_REF}..HEAD`]);
   return stdout.split('\n').map((l) => l.trim()).filter(Boolean);
 }
 
@@ -53,9 +56,11 @@ async function runTests(
   } catch {
     throw vitestError ?? new Error('vitest produced no JSON output');
   }
+  // Only a real failure is failing — skipped/todo/pending suites must not
+  // fabricate an incident.
   const results = (parsed.testResults ?? []).map((r) => ({
     file: path.relative(targetDir, r.name),
-    status: r.status === 'passed' ? ('passing' as const) : ('failing' as const),
+    status: r.status === 'failed' ? ('failing' as const) : ('passing' as const),
   }));
   if (results.length === 0) throw new Error('vitest JSON contained no testResults');
   return results;
