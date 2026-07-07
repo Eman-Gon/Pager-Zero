@@ -21,11 +21,13 @@ import {
   butterbaseConfigured,
   createApproval,
   ensureAccount,
+  findPendingApproval,
   getApproval,
   latestDiagnoseCandidate,
   latestVerifiedAction,
   markApplied,
   recordIncidentAction,
+  refundCredit,
   setApprovalStatus,
   spendCredit,
   type ActionRow,
@@ -38,6 +40,14 @@ import { startAutonomousLoop } from './autonomous.js';
 const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
 const PORT = Number(process.env.PORT ?? 3004);
+
+// Thrown when a ship is attempted for an action that was already applied — the
+// idempotency backstop against double-shipping one fix (two PRs / two credits).
+class AlreadyAppliedError extends Error {
+  constructor() {
+    super('this fix has already been applied');
+  }
+}
 
 async function connectWithRetry(): Promise<Driver> {
   const driver = createDriver();
@@ -114,6 +124,24 @@ app.get('/account', async (request, reply) => {
   if (!token) return { error: 'sign in first — Bearer token required' };
   const account = await ensureAccount(token);
   return account;
+});
+
+// M5 Phase 2: the guarded stub that proves the credit/paywall flow end-to-end.
+// Spends one credit (or returns the paywall) without any of the M6 ship side
+// effects — the real apply lives in POST /apply.
+app.post('/apply-stub', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (!token) return { error: 'sign in first — Bearer token required' };
+  try {
+    const { remaining } = await spendCredit(token);
+    return { status: 'ok', apply_credits: remaining };
+  } catch (err) {
+    if (err instanceof PaywallError) {
+      reply.code(402);
+      return { error: 'payment_required', message: err.message };
+    }
+    throw err;
+  }
 });
 
 // The M3 flow: incident from the sensor → runbook retrieval → context →
@@ -199,14 +227,31 @@ async function shipVerifiedFix(
   token: string,
   pending: { action: ActionRow; incident: StoredIncidentRow },
 ): Promise<{ pr_url: string; branch: string; mttr_seconds: number }> {
+  // Idempotency guard: never ship the same action twice. Two approvals for one
+  // action (or a re-approved record) would otherwise open two PRs and spend two
+  // credits. latestVerifiedAction already filters applied rows for /apply; this
+  // covers the /approvals path where the action is loaded by id.
+  if (pending.action.applied) {
+    throw new AlreadyAppliedError();
+  }
+
   await spendCredit(token);
 
   const res = await fetch(`${SENSOR_URL}/incident`);
   const live = res.ok ? ((await res.json()) as Incident) : null;
-  const { pr_url, branch } = await openFixPr(pending.action.candidate_fix!, {
-    root_cause: pending.incident.root_cause,
-    failing_tests: live?.status === 'incident' ? live.failing_tests : [],
-  });
+  let pr_url: string;
+  let branch: string;
+  try {
+    ({ pr_url, branch } = await openFixPr(pending.action.candidate_fix!, {
+      root_cause: pending.incident.root_cause,
+      failing_tests: live?.status === 'incident' ? live.failing_tests : [],
+    }));
+  } catch (err) {
+    // The PR is the irreversible act; the credit was spent a step earlier. If
+    // the PR fails, give the credit back so a GitHub outage doesn't burn it.
+    await refundCredit(token).catch((e) => log('credit_refund_error', { error: String(e) }));
+    throw err;
+  }
 
   const { mttr_seconds } = await markApplied(token, pending.action, pending.incident);
 
@@ -244,7 +289,11 @@ app.post('/apply', async (request, reply) => {
     fix_path: pending.action.candidate_fix!.path,
   });
   if (decision.requires_approval) {
-    const approval = await createApproval(token, pending.action.id);
+    // Reuse an open approval for this action if one exists, so repeated /apply
+    // calls don't pile up duplicate pending approvals for the same fix.
+    const approval =
+      (await findPendingApproval(token, pending.action.id)) ??
+      (await createApproval(token, pending.action.id));
     log('apply_gated', { approval_id: approval.id, reasons: decision.reasons });
     return { status: 'pending_approval', approval_id: approval.id, reasons: decision.reasons };
   }
@@ -255,6 +304,10 @@ app.post('/apply', async (request, reply) => {
     if (err instanceof PaywallError) {
       reply.code(402);
       return { error: 'payment_required', message: err.message };
+    }
+    if (err instanceof AlreadyAppliedError) {
+      reply.code(409);
+      return { error: 'already_applied', message: err.message };
     }
     throw err;
   }
@@ -293,6 +346,13 @@ app.post('/approvals/:id', async (request, reply) => {
     reply.code(409);
     return { error: 'approved action has no candidate_fix' };
   }
+  // Already shipped (e.g. a duplicate approval got approved first): don't ship
+  // again. Settle this approval as approved without a second PR or credit spend.
+  if (pending.action.applied) {
+    await setApprovalStatus(token, id, 'approved');
+    reply.code(409);
+    return { status: 'approved', error: 'already_applied', message: 'this fix was already shipped' };
+  }
   try {
     const shipped = await shipVerifiedFix(token, pending);
     await setApprovalStatus(token, id, 'approved');
@@ -301,6 +361,11 @@ app.post('/approvals/:id', async (request, reply) => {
     if (err instanceof PaywallError) {
       reply.code(402);
       return { error: 'payment_required', message: err.message };
+    }
+    if (err instanceof AlreadyAppliedError) {
+      await setApprovalStatus(token, id, 'approved');
+      reply.code(409);
+      return { status: 'approved', error: 'already_applied', message: err.message };
     }
     throw err;
   }

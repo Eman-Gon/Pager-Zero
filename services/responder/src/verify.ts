@@ -177,26 +177,32 @@ export async function verifyCandidatesParallel(
   const tarball = snapshot ? null : await packRepo(targetDir);
   const repoDir = snapshot ? SNAPSHOT_REPO_DIR : 'repo';
 
-  // Create all sandboxes first so the concurrency is observable via list().
-  const sandboxes = await Promise.all(
-    candidates.map(async (_, i) => {
-      const sandbox = await client().create(
-        snapshot
-          ? { snapshot, labels: { rescueops: 'verify', candidate: String(i) } }
-          : { language: 'typescript', labels: { rescueops: 'verify', candidate: String(i) } },
-      );
-      log('sandbox_created', { id: sandbox.id, candidate: i, snapshot });
-      return sandbox;
-    }),
-  );
-  const ours = new Set(sandboxes.map((s) => s.id));
-  const running: string[] = [];
-  for await (const s of client().list()) if (ours.has(s.id)) running.push(`${s.id}:${s.state}`);
-  log('sandboxes_concurrent', { count: running.length, sandboxes: running });
-
+  // Index-keyed so a candidate's sandbox stays at sandboxes[i] regardless of
+  // create() completion order, and so the finally can delete whatever got
+  // created even if one create() rejects mid-flight (no orphaned sandboxes).
+  const sandboxes: (Sandbox | undefined)[] = new Array(candidates.length);
   try {
+    // Create all sandboxes first so the concurrency is observable via list().
+    await Promise.all(
+      candidates.map(async (_, i) => {
+        const sandbox = await client().create(
+          snapshot
+            ? { snapshot, labels: { rescueops: 'verify', candidate: String(i) } }
+            : { language: 'typescript', labels: { rescueops: 'verify', candidate: String(i) } },
+        );
+        sandboxes[i] = sandbox;
+        log('sandbox_created', { id: sandbox.id, candidate: i, snapshot });
+      }),
+    );
+    const created = sandboxes as Sandbox[];
+
+    const ours = new Set(created.map((s) => s.id));
+    const running: string[] = [];
+    for await (const s of client().list()) if (ours.has(s.id)) running.push(`${s.id}:${s.state}`);
+    log('sandboxes_concurrent', { count: running.length, sandboxes: running });
+
     const results = await Promise.all(
-      sandboxes.map(async (sandbox, i) => {
+      created.map(async (sandbox, i) => {
         const candidate = candidates[i];
         if (tarball) await setupRepo(sandbox, tarball);
         await sandbox.fs.uploadFile(
@@ -216,9 +222,11 @@ export async function verifyCandidatesParallel(
     await Promise.all(
       sandboxes.map((sandbox) =>
         sandbox
-          .delete()
-          .then(() => log('sandbox_deleted', { id: sandbox.id }))
-          .catch((err: unknown) => log('sandbox_delete_failed', { id: sandbox.id, error: String(err) })),
+          ? sandbox
+              .delete()
+              .then(() => log('sandbox_deleted', { id: sandbox.id }))
+              .catch((err: unknown) => log('sandbox_delete_failed', { id: sandbox.id, error: String(err) }))
+          : Promise.resolve(),
       ),
     );
   }
