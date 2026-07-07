@@ -141,6 +141,7 @@ export interface StoredIncidentRow {
   root_cause: string | null;
   status: string;
   severity: string | null;
+  blast_radius?: { functions?: string[] } | null;
   opened_at: string;
   resolved_at: string | null;
   mttr_seconds: number | null;

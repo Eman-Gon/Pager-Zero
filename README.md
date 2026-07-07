@@ -18,19 +18,19 @@ Autonomous on-call engineer: watches a codebase, detects broken commits, diagnos
 2. Create the target repo (M1) or clone a patient codebase into `./target-repo`.
 3. Start the stack (pick one):
 
+**Docker (one command)** — sensor + responder + Mission Control UI:
+
+```bash
+./scripts/docker-up.sh        # foreground
+./scripts/docker-up.sh -d     # detached
+```
+
+Reads API keys from `.env`. Optional profiles: `--profile local-neo4j`, `--profile local-rocketride`.
+
 **Native (no Docker)** — uses Neo4j Aura / keys from `.env`:
 
 ```bash
-# Free ports if another project's Docker stack is using 3003/3004:
-docker stop $(docker ps -q --filter publish=3003) $(docker ps -q --filter publish=3004) 2>/dev/null || true
-
 ./scripts/dev-native.sh
-```
-
-**Docker Compose** — optional local Neo4j via `--profile local-neo4j`:
-
-```bash
-docker compose up --build
 ```
 
 4. Seed an incident and diagnose:
@@ -41,7 +41,7 @@ curl http://localhost:3004/connection   # proves RocketRide Cloud URI
 curl -X POST http://localhost:3004/diagnose
 ```
 
-5. UI: http://localhost:5173 (`dev-native.sh` starts it; with Docker-only, run `cd frontend && npm run dev`).
+5. UI: http://localhost:5173 (Docker `./scripts/docker-up.sh` or native `./scripts/dev-native.sh`).
 
 **Butterbase hosting (live URL):** build and deploy Mission Control to Butterbase Pages:
 
