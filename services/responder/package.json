@@ -1,0 +1,18 @@
+{
+  "name": "responder",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "neo4j-driver": "^5.28.0",
+    "rocketride": "^1.3.0",
+    "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0"
+  }
+}

@@ -1,3 +1,4 @@
 # target-repo is its own self-contained git repo — not tracked by this outer repo
 target-repo/
 node_modules/
+.env
