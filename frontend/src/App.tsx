@@ -12,14 +12,9 @@ import {
   signInDemo,
   signUp,
 } from './auth';
-import ApprovalPanel from './panels/ApprovalPanel';
 import CreditsPanel from './panels/CreditsPanel';
-import GraphPanel from './panels/GraphPanel';
-import SandboxPanel from './panels/SandboxPanel';
-import ShipPanel from './panels/ShipPanel';
-import TracePanel from './panels/TracePanel';
 import StatusBar from './panels/StatusBar';
-import AgentFlowPanel from './panels/AgentFlowPanel';
+import WizardShell from './wizard/WizardShell';
 
 function AuthCard({ onToken }: { onToken: (token: string, email: string) => void }) {
   const [mode, setMode] = useState<'demo' | 'in' | 'up'>('demo');
@@ -279,49 +274,14 @@ export default function App() {
         <span className={`status-pill ${incident?.status === 'incident' ? 'incident' : 'ok'}`}>
           {incident === null ? 'sensor offline' : incident.status === 'incident' ? 'INCIDENT' : 'all clear'}
         </span>
-        {incident?.status === 'incident' && (
-          <span className="muted">
-            root cause <b>{incident.root_cause}</b> · blast {incident.blast_radius.join(', ')}
-          </span>
-        )}
         <div className="spacer" />
+        <div className="topbar-credits">
+          <CreditsPanel token={token} tick={tick} />
+        </div>
         <StatusBar />
         <span className="who">{email}</span>
       </div>
-      <div className="grid">
-        <div className="panel graph">
-          <h2>Code graph</h2>
-          <GraphPanel incident={incident} />
-        </div>
-        <div className="panel">
-          <h2>Agent trace</h2>
-          <TracePanel token={token} incident={incident} tick={tick} />
-        </div>
-        <div className="panel">
-          <h2>Sandbox verify</h2>
-          <SandboxPanel token={token} incident={incident} tick={tick} onChanged={bump} />
-        </div>
-        <div className="panel">
-          <h2>Approvals</h2>
-          <ApprovalPanel token={token} tick={tick} onChanged={bump} />
-        </div>
-        <div className="panel">
-          <h2>Ship</h2>
-          <ShipPanel token={token} tick={tick} onChanged={bump} />
-        </div>
-      </div>
-      <div className="grid" style={{ paddingTop: 0, gridTemplateColumns: '1fr' }}>
-        <div className="panel" style={{ minHeight: 200 }}>
-          <h2>Agent ops — stats &amp; pipeline</h2>
-          <AgentFlowPanel token={token} tick={tick} />
-        </div>
-      </div>
-      <div className="grid" style={{ paddingTop: 0, gridTemplateColumns: '1fr' }}>
-        <div className="panel" style={{ minHeight: 120 }}>
-          <h2>Credits &amp; plan</h2>
-          <CreditsPanel token={token} tick={tick} />
-        </div>
-      </div>
+      <WizardShell token={token} incident={incident} tick={tick} bump={bump} />
     </>
   );
 }
