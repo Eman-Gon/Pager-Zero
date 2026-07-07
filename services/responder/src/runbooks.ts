@@ -19,7 +19,7 @@ const RUNBOOKS: { title: string; text: string; appliesTo: string[] }[] = [
   {
     title: 'Off-by-one error in aggregation boundary',
     text: 'Symptom: totals over a collection are wrong by exactly one element — the first or last item is skipped or counted twice. Root cause is an incorrect loop bound, a reduce with the wrong initial value, or slicing that excludes an endpoint. Fix approach: check the iteration start/end and the accumulator seed, and add a test with a single-element and an empty collection to pin the boundary behavior.',
-    appliesTo: ['invoiceTotal'],
+    appliesTo: ['invoiceTotal', 'sumRiskWeights'],
   },
   {
     title: 'Missing null or undefined handling',
