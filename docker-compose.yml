@@ -1,0 +1,43 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: y
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  payments:
+    build: ./services/payments
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: postgres
+      PGUSER: postgres
+      PGPASSWORD: y
+      POOL_MAX: "5"
+      MARKER: /data/fault
+    volumes:
+      - ./data/payments:/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+
+  orders:
+    build: ./services/orders
+    environment:
+      PAYMENTS_URL: http://payments:3002
+    ports:
+      - "3001:3001"
+
+  gateway:
+    build: ./services/gateway
+    environment:
+      ORDERS_URL: http://orders:3001
+    ports:
+      - "3000:3000"
