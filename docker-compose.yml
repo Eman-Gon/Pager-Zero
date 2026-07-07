@@ -8,8 +8,10 @@ services:
     image: rescueops/rocketride-engine:patched
     ports:
       - "5565:5565"
+    # The engine image ships curl (not wget) and serves HTTP on :5565 (the
+    # WebSocket lives at /task/service). A plain GET / returns 200 once ready.
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:5565 || exit 1"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:5565/ -o /dev/null || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 24
