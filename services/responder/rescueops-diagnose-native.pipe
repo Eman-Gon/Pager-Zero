@@ -139,7 +139,7 @@
       "name": "Butterbase MCP",
       "config": {
         "type": "tool_butterbase",
-        "bearer": "${ROCKETRIDE_BUTTERBASE_API_KEY}",
+        "bearer": "${ROCKETRIDE_BUTTERBASE_MCP_BEARER}",
         "endpoint": "${ROCKETRIDE_BUTTERBASE_MCP_ENDPOINT}",
         "serverName": "butterbase"
       },

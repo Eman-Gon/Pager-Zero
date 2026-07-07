@@ -156,6 +156,7 @@ function rocketrideEnv(): Record<string, string> {
     ROCKETRIDE_BUTTERBASE_API_KEY: gw.key,
     ROCKETRIDE_BUTTERBASE_MODEL: gw.model,
     ROCKETRIDE_BUTTERBASE_MCP_ENDPOINT: process.env.BUTTERBASE_MCP_ENDPOINT ?? 'https://api.butterbase.ai/mcp',
+    ROCKETRIDE_BUTTERBASE_MCP_BEARER: process.env.BUTTERBASE_API_KEY ?? '',
     NEO4J_MCP_ENDPOINT: process.env.NEO4J_MCP_ENDPOINT ?? 'http://localhost:8787/mcp',
     ROCKETRIDE_NEO4J_BASIC_AUTH: neo4jBasicAuth(),
     ROCKETRIDE_NEO4J_URI: neo4jUri,
