@@ -1,6 +1,8 @@
+import type NVL from '@neo4j-nvl/base';
+import type { Node as NvlNode, Relationship as NvlRel } from '@neo4j-nvl/base';
+import { InteractiveNvlWrapper } from '@neo4j-nvl/react';
 import neo4j from 'neo4j-driver';
-import { useEffect, useRef, useState } from 'react';
-import ForceGraph2D from 'react-force-graph-2d';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Incident } from '../api';
 
 const NEO4J_URL = import.meta.env.VITE_NEO4J_URL ?? 'bolt://localhost:7687';
@@ -45,19 +47,21 @@ async function loadGraph(): Promise<{ nodes: GNode[]; links: GLink[] }> {
   }
 }
 
+const COLOR = {
+  root: '#ef5f5f',
+  blast: '#f0b429',
+  fn: '#4ea1ff',
+  test: '#5b7089',
+  calls: '#3b506e',
+  tests: '#2d3c52',
+} as const;
+
+const short = (id: string) => id.replace('test/', '');
+
 export default function GraphPanel({ incident }: { incident: Incident | null }) {
   const [graph, setGraph] = useState<{ nodes: GNode[]; links: GLink[] }>({ nodes: [], links: [] });
   const [source, setSource] = useState<'neo4j' | 'incident' | 'none'>('none');
-  const holder = useRef<HTMLDivElement>(null);
-  const [size, setSize] = useState({ w: 400, h: 460 });
-
-  useEffect(() => {
-    const measure = () =>
-      holder.current && setSize({ w: holder.current.clientWidth, h: holder.current.clientHeight });
-    measure();
-    window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, []);
+  const nvlRef = useRef<NVL | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -88,35 +92,78 @@ export default function GraphPanel({ incident }: { incident: Incident | null }) 
   }, [incident?.status, incident?.root_cause]);
 
   const root = incident?.status === 'incident' ? incident.root_cause : null;
-  const blast = new Set(incident?.status === 'incident' ? incident.blast_radius : []);
+  const blast = useMemo(
+    () => new Set(incident?.status === 'incident' ? incident.blast_radius : []),
+    [incident?.status, incident?.root_cause, incident?.blast_radius],
+  );
+
+  // Map the code graph into NVL's Node/Relationship model. Colour + size encode
+  // the incident: root_cause is red and largest, the blast radius amber, other
+  // functions blue, test files muted. Recomputed whenever the incident changes.
+  const nodes: NvlNode[] = useMemo(
+    () =>
+      graph.nodes.map((n) => {
+        const isRoot = n.id === root;
+        const inBlast = blast.has(n.id);
+        const color = isRoot ? COLOR.root : inBlast ? COLOR.blast : n.kind === 'test' ? COLOR.test : COLOR.fn;
+        const size = isRoot ? 42 : inBlast ? 30 : n.kind === 'test' ? 18 : 24;
+        return {
+          id: n.id,
+          caption: short(n.id),
+          color,
+          size,
+          captionAlign: 'bottom',
+          captionSize: isRoot ? 3 : 2,
+          selected: isRoot,
+        };
+      }),
+    [graph.nodes, root, blast],
+  );
+
+  const rels: NvlRel[] = useMemo(
+    () =>
+      graph.links.map((l) => ({
+        id: `${l.source}->${l.target}:${l.kind}`,
+        from: l.source,
+        to: l.target,
+        color: l.kind === 'TESTS' ? COLOR.tests : COLOR.calls,
+        // Emphasise the edges that flow into the root cause (the blast radius).
+        width: root && l.target === root ? 3 : 1,
+      })),
+    [graph.links, root],
+  );
+
+  // Fit the whole graph into view once it (re)loads.
+  useEffect(() => {
+    if (!nodes.length) return;
+    const t = setTimeout(() => nvlRef.current?.fit?.(nodes.map((n) => n.id), {}), 300);
+    return () => clearTimeout(t);
+  }, [nodes]);
 
   return (
-    <div ref={holder} style={{ position: 'absolute', inset: 6 }}>
-      <ForceGraph2D
-        width={size.w}
-        height={size.h}
-        graphData={graph}
-        backgroundColor="rgba(0,0,0,0)"
-        nodeLabel={(n: any) => n.id}
-        nodeColor={(n: any) =>
-          n.id === root ? '#ef5f5f' : blast.has(n.id) ? '#f0b429' : n.kind === 'test' ? '#5b7089' : '#4ea1ff'
-        }
-        nodeVal={(n: any) => (n.id === root ? 10 : blast.has(n.id) ? 6 : 3)}
-        linkColor={(l: any) => (l.kind === 'TESTS' ? '#2d3c52' : '#3b506e')}
-        linkDirectionalArrowLength={4}
-        linkDirectionalParticles={(l: any) =>
-          root && (l.target?.id === root || l.target === root) ? 2 : 0
-        }
-        nodeCanvasObjectMode={() => 'after'}
-        nodeCanvasObject={(n: any, ctx, scale) => {
-          ctx.font = `${11 / scale}px monospace`;
-          ctx.fillStyle = n.id === root ? '#ef5f5f' : blast.has(n.id) ? '#f0b429' : '#7f93ab';
-          ctx.textAlign = 'center';
-          ctx.fillText(n.id.replace('test/', ''), n.x, n.y - 8 / scale);
-        }}
-      />
+    <div style={{ position: 'absolute', inset: 6 }}>
+      {nodes.length ? (
+        <InteractiveNvlWrapper
+          ref={nvlRef}
+          nodes={nodes}
+          rels={rels}
+          layout="forceDirected"
+          nvlOptions={{
+            // Canvas renderer: NVL only draws captions + arrowheads off WebGL.
+            disableWebGL: true,
+            initialZoom: 1,
+            minZoom: 0.15,
+            maxZoom: 3,
+          }}
+          style={{ width: '100%', height: '100%', background: 'transparent' }}
+        />
+      ) : (
+        <div className="muted" style={{ display: 'grid', placeItems: 'center', height: '100%', fontSize: 12 }}>
+          no graph data
+        </div>
+      )}
       <div className="muted" style={{ position: 'absolute', bottom: 4, right: 8, fontSize: 11 }}>
-        {source === 'neo4j' ? 'live neo4j graph' : source === 'incident' ? 'incident subgraph (neo4j unreachable)' : 'no graph data'}
+        {source === 'neo4j' ? 'live neo4j graph · NVL' : source === 'incident' ? 'incident subgraph · NVL (neo4j unreachable)' : 'no graph data'}
       </div>
     </div>
   );
