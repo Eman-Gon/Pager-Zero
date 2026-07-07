@@ -128,10 +128,10 @@ account_after=$(curl -sf -m 30 -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL
 credits_after=$(echo "$account_after" | jq -r '.apply_credits')
 plan_after=$(echo "$account_after" | jq -r '.plan')
 # Strict: the balance must actually drop by exactly one. Butterbase account
-# writes require an `accounts.id uuid primary key default gen_random_uuid()`
-# column; older apps with `user_id` as the only key need that schema migration.
+# writes require an `accounts.id` uuid column (unique, default gen_random_uuid())
+# so PATCH /accounts/:id succeeds; user_id remains the primary key.
 [[ "$credits_after" -eq $((credits_before - 1)) ]] \
-  || fail "credit not decremented: before=$credits_before after=$credits_after (plan=$plan_after) — ensure accounts.id exists as a uuid primary key so credit writes persist"
+  || fail "credit not decremented: before=$credits_before after=$credits_after (plan=$plan_after) — ensure accounts has a unique id column so credit writes persist"
 ok "credits: $credits_before -> $credits_after (plan: $plan_after)"
 
 # --- step 8: reset -> all green -------------------------------------------------------

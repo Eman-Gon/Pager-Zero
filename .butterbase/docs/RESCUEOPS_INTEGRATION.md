@@ -47,10 +47,21 @@ All tables have row-level security — users see only their own rows.
 | ----- | ----------- | ---------- |
 | `incidents` | `root_cause`, `blast_radius` (jsonb), `severity`, `status`, `mttr_seconds` | `recordIncidentAction`, `markApplied` |
 | `actions` | `incident_id`, `type`, `candidate_fix` (jsonb), `verified`, `applied` | diagnose/remediate/ship flow |
-| `accounts` | `id` (uuid primary key), `user_id`, `apply_credits`, `plan` | `ensureAccount`, `spendCredit` |
+| `accounts` | `id` (uuid unique), `user_id` (PK), `apply_credits`, `plan` | `ensureAccount`, `spendCredit` |
 | `approvals` | `action_id`, `status` (`pending`/`approved`/`denied`) | M7 approval gate |
 
-**Accounts write requirement:** Butterbase Data API writes use the row `id` path. The `accounts` table must have an `id uuid primary key default gen_random_uuid()` column so demo credit grants, credit spends, and refunds persist. If an older app has `user_id` as the primary key, migrate it in the Butterbase dashboard/MCP so `id` is the primary key and `user_id` remains the per-user lookup column.
+**Accounts write requirement:** Butterbase Data API writes only support `PATCH /table/:id` (path param on a column literally named `id`). Query-string filters such as `?user_id=eq…` return 404. The `accounts` table therefore needs an `id` column (uuid, unique, `default: gen_random_uuid()`) alongside the existing `user_id` primary key. Add it in the Butterbase dashboard via **Edit schema (JSON)**:
+
+```json
+"id": {
+  "type": "uuid",
+  "nullable": false,
+  "default": "gen_random_uuid()",
+  "unique": true
+}
+```
+
+The responder's `writeAccount()` helper updates by `.eq('id', …)` so credit grants, spends, and refunds persist and the UI balance drops (5→4).
 
 **jsonb gotcha:** top-level JS arrays are rejected by jsonb columns — wrap lists in an object:
 

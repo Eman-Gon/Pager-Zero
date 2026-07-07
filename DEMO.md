@@ -135,10 +135,11 @@ All four are automated in `./scripts/e2e-negative.sh`:
 
 ## 5. Known demo caveats (be honest if asked)
 
-- **Credits require the accounts id migration**: the `accounts` table needs an
-  `id uuid primary key default gen_random_uuid()` column for Butterbase writes
-  to persist. With that in place, demo credits visibly decrement (5→4); without
-  it, the e2e script fails the strict credit-spend assertion.
+- **Credits require the accounts `id` column**: Butterbase only persists writes
+  via `PATCH /accounts/:id`. Add a unique `id uuid default gen_random_uuid()`
+  column (keep `user_id` as the primary key). With that in place, demo credits
+  visibly decrement (5→4); without it, the e2e script fails the strict
+  credit-spend assertion.
 - **MTTR** is real wall-clock from incident open to PR — during rehearsals it
   can look large because the incident sat open while you talked.
 - The RocketRide **agent-tools pipeline** (`rescueops-diagnose-agent.pipe`)

@@ -462,9 +462,7 @@ export async function spendCredit(token: string): Promise<{ remaining: number }>
   if (account.apply_credits <= 0) throw new PaywallError();
 
   // Demo mode: persist the decrement so the balance actually drops on screen
-  // (5→4). This works once the `accounts` table has a primary key — before that
-  // Butterbase blocks the write and we fall back to a synthetic (log-only)
-  // decrement so the demo never hard-stops.
+  // (5→4). Requires an `accounts.id` column so writeAccount can PATCH /:id.
   if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
     const remaining = account.apply_credits - 1;
     const client = userClient(token);
