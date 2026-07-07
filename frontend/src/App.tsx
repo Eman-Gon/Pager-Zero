@@ -6,6 +6,8 @@ import GraphPanel from './panels/GraphPanel';
 import SandboxPanel from './panels/SandboxPanel';
 import ShipPanel from './panels/ShipPanel';
 import TracePanel from './panels/TracePanel';
+import StatusBar from './panels/StatusBar';
+import AgentFlowPanel from './panels/AgentFlowPanel';
 
 function AuthCard({ onToken }: { onToken: (token: string, email: string) => void }) {
   const [email, setEmail] = useState('');
@@ -138,6 +140,7 @@ export default function App() {
           </span>
         )}
         <div className="spacer" />
+        <StatusBar />
         <span className="who">{email}</span>
       </div>
       <div className="grid">
@@ -147,11 +150,11 @@ export default function App() {
         </div>
         <div className="panel">
           <h2>Agent trace</h2>
-          <TracePanel token={token} incident={incident} />
+          <TracePanel token={token} incident={incident} tick={tick} />
         </div>
         <div className="panel">
           <h2>Sandbox verify</h2>
-          <SandboxPanel token={token} incident={incident} onChanged={bump} />
+          <SandboxPanel token={token} incident={incident} tick={tick} onChanged={bump} />
         </div>
         <div className="panel">
           <h2>Approvals</h2>
@@ -160,6 +163,12 @@ export default function App() {
         <div className="panel">
           <h2>Ship</h2>
           <ShipPanel token={token} tick={tick} onChanged={bump} />
+        </div>
+      </div>
+      <div className="grid" style={{ paddingTop: 0, gridTemplateColumns: '1fr' }}>
+        <div className="panel" style={{ minHeight: 200 }}>
+          <h2>Agent ops — stats &amp; pipeline</h2>
+          <AgentFlowPanel token={token} tick={tick} />
         </div>
       </div>
       <div className="grid" style={{ paddingTop: 0, gridTemplateColumns: '1fr' }}>

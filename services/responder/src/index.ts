@@ -1,7 +1,8 @@
 import Fastify from 'fastify';
-import neo4j, { type Driver } from 'neo4j-driver';
+import type { Driver } from 'neo4j-driver';
 import { assembleContext, functionFile, type Incident } from './context.js';
 import { log } from './log.js';
+import { createDriver } from './neo4j-config.js';
 import { DiagnosisPipeline, type CandidateFix, type Diagnosis } from './pipeline.js';
 import { ensureRunbookSubstrate, retrieveRunbooks } from './runbooks.js';
 import { verifyCandidate, verifyCandidatesParallel } from './verify.js';
@@ -11,6 +12,7 @@ import {
   bearerToken,
   butterbaseConfigured,
   createApproval,
+  ensureAccount,
   getApproval,
   latestVerifiedAction,
   markApplied,
@@ -21,17 +23,14 @@ import {
   type StoredIncidentRow,
 } from './butterbase.js';
 import { evaluatePolicy } from './policy.js';
-import { openFixPr } from './ship.js';
+import { githubConfigured, openFixPr } from './ship.js';
 
-const NEO4J_URL = process.env.NEO4J_URL ?? 'bolt://localhost:7687';
-const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
-const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'devpassword';
 const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
 const PORT = Number(process.env.PORT ?? 3004);
 
 async function connectWithRetry(): Promise<Driver> {
-  const driver = neo4j.driver(NEO4J_URL, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
+  const driver = createDriver();
   for (let attempt = 1; ; attempt++) {
     try {
       await driver.verifyConnectivity();
@@ -63,6 +62,42 @@ app.get('/connection', async () => {
     return { ...pipeline.connectionInfo(), error: String(err) };
   }
   return pipeline.connectionInfo();
+});
+
+app.get('/health', async () => {
+  let sensor = false;
+  try {
+    sensor = (await fetch(`${SENSOR_URL}/incident`)).ok;
+  } catch {
+    /* sensor unreachable */
+  }
+  let neo4j = false;
+  try {
+    await driver.verifyConnectivity();
+    neo4j = true;
+  } catch {
+    /* neo4j unreachable */
+  }
+  return {
+    sensor,
+    neo4j,
+    rocketride: pipeline.connectionInfo(),
+    butterbase: butterbaseConfigured(),
+    tools: {
+      daytona: Boolean(process.env.DAYTONA_API_KEY),
+      github: githubConfigured(),
+      nebius: Boolean(process.env.NEBIUS_API_KEY && process.env.NEBIUS_EMBED_MODEL),
+      rocketride: Boolean(process.env.ROCKETRIDE_APIKEY),
+    },
+  };
+});
+
+// Sync account row (subscription + demo credits) for the signed-in user.
+app.get('/account', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (!token) return { error: 'sign in first — Bearer token required' };
+  const account = await ensureAccount(token);
+  return account;
 });
 
 // The M3 flow: incident from the sensor → runbook retrieval → context →
@@ -284,7 +319,12 @@ app.post('/remediate', async (request, reply) => {
   }
 
   // Persist the remediation attempt for the signed-in user (M5).
-  async function persistRemediate(verified: boolean, fix: CandidateFix | null) {
+  async function persistRemediate(
+    verified: boolean,
+    fix: CandidateFix | null,
+    test_output?: string,
+    results?: { candidate_index: number; verified: boolean }[],
+  ) {
     if (!token) return {};
     const res = await fetch(`${SENSOR_URL}/incident`);
     if (!res.ok) return {};
@@ -294,7 +334,7 @@ app.post('/remediate', async (request, reply) => {
       token,
       incident,
       diagnosis ?? { severity: 'high', root_cause_explanation: '', proposed_fix_approach: '', cited_runbook: null },
-      { type: 'remediate', candidate_fix: fix, verified },
+      { type: 'remediate', candidate_fix: fix, verified, test_output, results },
     ).catch((err) => {
       log('butterbase_persist_failed', { error: String(err) });
       return {};
@@ -305,13 +345,18 @@ app.post('/remediate', async (request, reply) => {
   if (candidates.length === 1) {
     const { verified, test_output } = await verifyCandidate(TARGET_DIR, candidates[0]);
     log('remediate_done', { verified });
-    const rows = await persistRemediate(verified, candidates[0]);
+    const rows = await persistRemediate(verified, candidates[0], test_output);
     return { verified, candidate_fix: candidates[0], test_output, ...(diagnosis ? { diagnosis } : {}), ...rows };
   }
 
   const { selected, results } = await verifyCandidatesParallel(TARGET_DIR, candidates);
   log('remediate_done', { verified: selected !== null, selected });
-  const rows = await persistRemediate(selected !== null, selected !== null ? candidates[selected] : null);
+  const rows = await persistRemediate(
+    selected !== null,
+    selected !== null ? candidates[selected] : null,
+    selected !== null ? results[selected].test_output : results.map((r) => r.test_output).join('\n---\n'),
+    results.map(({ candidate_index, verified }) => ({ candidate_index, verified })),
+  );
   return {
     verified: selected !== null,
     candidate_fix: selected !== null ? candidates[selected] : null,

@@ -1,5 +1,6 @@
 services:
   neo4j:
+    profiles: ["local-neo4j"]
     image: neo4j:5
     environment:
       NEO4J_AUTH: neo4j/devpassword
@@ -25,6 +26,7 @@ services:
       BUTTERBASE_APP_ID: ${BUTTERBASE_APP_ID:-}
       BUTTERBASE_API_URL: ${BUTTERBASE_API_URL:-https://api.butterbase.ai}
       BUTTERBASE_PLAN_CREDITS: ${BUTTERBASE_PLAN_CREDITS:-5}
+      DEMO_AUTO_CREDITS: ${DEMO_AUTO_CREDITS:-1}
       NEBIUS_BASE_URL: ${NEBIUS_BASE_URL:-https://api.tokenfactory.nebius.com/v1}
       NEBIUS_API_KEY: ${NEBIUS_API_KEY:-}
       NEBIUS_EMBED_MODEL: ${NEBIUS_EMBED_MODEL:-}
@@ -32,17 +34,18 @@ services:
       DAYTONA_API_URL: ${DAYTONA_API_URL:-}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_REPO: ${GITHUB_REPO:-}
-      NEO4J_URL: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: devpassword
+      NEO4J_URL: ${NEO4J_URL:-${NEO4J_URI:-bolt://host.docker.internal:7687}}
+      NEO4J_URI: ${NEO4J_URI:-}
+      NEO4J_USER: ${NEO4J_USER:-${NEO4J_USERNAME:-neo4j}}
+      NEO4J_USERNAME: ${NEO4J_USERNAME:-}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-devpassword}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-}
       SENSOR_URL: http://sensor:3003
       TARGET_DIR: /target
       PORT: "3004"
     ports:
       - "3004:3004"
     depends_on:
-      neo4j:
-        condition: service_healthy
       sensor:
         condition: service_started
 
@@ -53,13 +56,13 @@ services:
       # hide the host's (darwin) node_modules; the sensor installs linux deps here
       - /target/node_modules
     environment:
-      NEO4J_URL: bolt://neo4j:7687
-      NEO4J_USER: neo4j
-      NEO4J_PASSWORD: devpassword
+      NEO4J_URL: ${NEO4J_URL:-${NEO4J_URI:-bolt://host.docker.internal:7687}}
+      NEO4J_URI: ${NEO4J_URI:-}
+      NEO4J_USER: ${NEO4J_USER:-${NEO4J_USERNAME:-neo4j}}
+      NEO4J_USERNAME: ${NEO4J_USERNAME:-}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-devpassword}
+      NEO4J_DATABASE: ${NEO4J_DATABASE:-}
       TARGET_DIR: /target
       PORT: "3003"
     ports:
       - "3003:3003"
-    depends_on:
-      neo4j:
-        condition: service_healthy

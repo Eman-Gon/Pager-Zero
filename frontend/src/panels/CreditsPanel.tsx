@@ -1,11 +1,5 @@
 import { useEffect, useState } from 'react';
-import { butterbase } from '../api';
-
-interface AccountRow {
-  user_id: string;
-  apply_credits: number;
-  plan: string;
-}
+import { butterbase, syncAccount, type AccountRow } from '../api';
 
 export default function CreditsPanel({ token, tick }: { token: string; tick: number }) {
   const [account, setAccount] = useState<AccountRow | null>(null);
@@ -13,13 +7,13 @@ export default function CreditsPanel({ token, tick }: { token: string; tick: num
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    butterbase.setAccessToken(token);
-    butterbase
-      .from<AccountRow>('accounts')
-      .select('*')
-      .then((res: any) => {
-        if (!res.error) setAccount(((res.data ?? []) as AccountRow[])[0] ?? null);
-      });
+    let alive = true;
+    syncAccount(token)
+      .then((row) => alive && setAccount(row))
+      .catch((err) => alive && setError(String(err)));
+    return () => {
+      alive = false;
+    };
   }, [token, tick]);
 
   async function subscribe() {
@@ -42,6 +36,7 @@ export default function CreditsPanel({ token, tick }: { token: string; tick: num
   }
 
   const credits = account?.apply_credits ?? 0;
+  const isDemo = account?.plan === 'demo';
   return (
     <div className="row">
       <span>
@@ -50,6 +45,7 @@ export default function CreditsPanel({ token, tick }: { token: string; tick: num
       <span>
         apply credits <b className={credits > 0 ? 'sev-low' : 'sev-high'}>{credits}</b>
       </span>
+      {isDemo && <span className="muted">demo credits (DEMO_AUTO_CREDITS)</span>}
       {credits <= 0 && (
         <button disabled={busy} onClick={subscribe}>
           {busy ? 'Opening checkout…' : 'Subscribe to unlock apply'}

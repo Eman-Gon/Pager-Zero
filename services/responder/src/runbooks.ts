@@ -1,5 +1,6 @@
 import type { Driver } from 'neo4j-driver';
 import { log } from './log.js';
+import { openSession } from './neo4j-config.js';
 
 export interface RunbookHit {
   title: string;
@@ -58,7 +59,7 @@ async function embed(texts: string[]): Promise<number[][]> {
 // Idempotent: nodes + APPLIES_TO always (no creds needed); embeddings + vector
 // index only when Nebius is configured and the stored model differs.
 export async function ensureRunbookSubstrate(driver: Driver): Promise<void> {
-  const session = driver.session();
+  const session = openSession(driver);
   try {
     for (const rb of RUNBOOKS) {
       await session.run(`MERGE (r:Runbook {title: $title}) SET r.text = $text`, rb);
@@ -112,7 +113,7 @@ export async function retrieveRunbooks(
 ): Promise<RunbookHit[] | null> {
   if (!nebiusEnv()) return null;
   const [qEmb] = await embed([incidentQuery]);
-  const session = driver.session();
+  const session = openSession(driver);
   try {
     const res = await session.run(
       `CALL db.index.vector.queryNodes($index, 5, $qEmb) YIELD node, score

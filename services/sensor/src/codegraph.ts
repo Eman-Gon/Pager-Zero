@@ -1,5 +1,6 @@
 import path from 'node:path';
 import type { Driver } from 'neo4j-driver';
+import { openSession } from './neo4j-config.js';
 import { FunctionDeclaration, Node, Project, SyntaxKind } from 'ts-morph';
 
 export interface CodeGraph {
@@ -61,7 +62,7 @@ export function analyzeTarget(targetDir: string): CodeGraph {
 }
 
 export async function writeCodeGraph(driver: Driver, g: CodeGraph): Promise<void> {
-  const session = driver.session();
+  const session = openSession(driver);
   try {
     await session.executeWrite(async (tx) => {
       for (const f of g.functions) {

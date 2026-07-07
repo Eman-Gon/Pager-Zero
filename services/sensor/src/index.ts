@@ -1,17 +1,15 @@
 import Fastify from 'fastify';
-import neo4j, { type Driver } from 'neo4j-driver';
+import type { Driver } from 'neo4j-driver';
 import { analyzeTarget, writeCodeGraph } from './codegraph.js';
 import { log } from './log.js';
+import { createDriver, openSession } from './neo4j-config.js';
 import { ensureTargetDeps, gitHead, scan } from './scan.js';
 
-const NEO4J_URL = process.env.NEO4J_URL ?? 'bolt://localhost:7687';
-const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
-const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'devpassword';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
 const PORT = Number(process.env.PORT ?? 3003);
 
 async function connectWithRetry(): Promise<Driver> {
-  const driver = neo4j.driver(NEO4J_URL, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
+  const driver = createDriver();
   for (let attempt = 1; ; attempt++) {
     try {
       await driver.verifyConnectivity();
@@ -39,7 +37,7 @@ log('graph_built', {
 const app = Fastify();
 
 app.get('/incident', async () => {
-  const session = driver.session();
+  const session = openSession(driver);
   try {
     const failingTests = (
       await session.run(`MATCH (t:Test {status:'failing'}) RETURN t.file AS file ORDER BY file`)

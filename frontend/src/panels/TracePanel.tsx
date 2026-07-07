@@ -1,14 +1,47 @@
-import { useState } from 'react';
-import { diagnose, type Diagnosis, type Incident } from '../api';
+import { useEffect, useState } from 'react';
+import { diagnose, fetchPersistedActions, type Diagnosis, type Incident } from '../api';
 
-export default function TracePanel({ token, incident }: { token: string; incident: Incident | null }) {
+function traceFromPayload(payload: { trace?: Diagnosis } | null | undefined): Diagnosis | null {
+  const t = payload?.trace;
+  if (!t?.root_cause_explanation) return null;
+  return t;
+}
+
+export default function TracePanel({
+  token,
+  incident,
+  tick,
+}: {
+  token: string;
+  incident: Incident | null;
+  tick: number;
+}) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<Diagnosis | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [restored, setRestored] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    fetchPersistedActions(token)
+      .then(({ diagnose: row }) => {
+        if (!alive) return;
+        const trace = traceFromPayload(row?.candidate_fix);
+        if (trace) {
+          setResult(trace);
+          setRestored(true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token, tick]);
 
   async function run() {
     setBusy(true);
     setError(null);
+    setRestored(false);
     try {
       const { status, data } = await diagnose(token);
       if (status !== 200) throw new Error(data.error ?? `HTTP ${status}`);
@@ -31,6 +64,7 @@ export default function TracePanel({ token, incident }: { token: string; inciden
         <button disabled={busy || incident?.status !== 'incident'} onClick={run}>
           {busy ? 'Reasoning on RocketRide Cloud…' : 'Diagnose'}
         </button>
+        {restored && result && <span className="muted">restored from Butterbase</span>}
       </div>
       {error && <div className="err">{error}</div>}
       {result && (

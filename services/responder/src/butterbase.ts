@@ -45,12 +45,56 @@ interface IncidentRow {
   status: string;
 }
 
+// Trace + sandbox metadata ride in candidate_fix jsonb (no schema migration needed).
+export interface StoredActionPayload extends CandidateFix {
+  trace?: Pick<
+    Diagnosis,
+    'severity' | 'root_cause_explanation' | 'proposed_fix_approach' | 'cited_runbook'
+  >;
+  sandbox?: { test_output?: string; results?: { candidate_index: number; verified: boolean }[] };
+}
+
+function packCandidateFix(
+  diagnosis: Diagnosis,
+  action: {
+    type: 'diagnose' | 'remediate';
+    candidate_fix?: CandidateFix | null;
+    test_output?: string;
+    results?: { candidate_index: number; verified: boolean }[];
+  },
+): StoredActionPayload | null {
+  const fix = action.candidate_fix ?? diagnosis.candidate_fix ?? null;
+  if (action.type === 'diagnose') {
+    return {
+      ...(fix ?? { path: '', content: '' }),
+      trace: {
+        severity: diagnosis.severity,
+        root_cause_explanation: diagnosis.root_cause_explanation,
+        proposed_fix_approach: diagnosis.proposed_fix_approach,
+        cited_runbook: diagnosis.cited_runbook,
+      },
+    };
+  }
+  if (!fix) return null;
+  const payload: StoredActionPayload = { ...fix };
+  if (action.test_output || action.results?.length) {
+    payload.sandbox = { test_output: action.test_output, results: action.results };
+  }
+  return payload;
+}
+
 // Persist the incident + the diagnose/remediate action for the signed-in user.
 export async function recordIncidentAction(
   token: string,
   incident: Incident,
   diagnosis: Diagnosis,
-  action: { type: 'diagnose' | 'remediate'; candidate_fix?: CandidateFix | null; verified?: boolean },
+  action: {
+    type: 'diagnose' | 'remediate';
+    candidate_fix?: CandidateFix | null;
+    verified?: boolean;
+    test_output?: string;
+    results?: { candidate_index: number; verified: boolean }[];
+  },
 ): Promise<{ incident_id: string; action_id: string }> {
   const client = userClient(token);
 
@@ -79,7 +123,7 @@ export async function recordIncidentAction(
   const act = await client.from('actions').insert({
     incident_id: incidentId,
     type: action.type,
-    candidate_fix: action.candidate_fix ?? diagnosis.candidate_fix ?? null,
+    candidate_fix: packCandidateFix(diagnosis, action),
     verified: action.verified ?? false,
   });
   if (act.error) throw new Error(`actions insert failed: ${JSON.stringify(act.error)}`);
@@ -109,6 +153,22 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
     const created = await client.from('accounts').insert({ apply_credits: 0, plan: 'free' });
     if (created.error) throw new Error(`accounts insert failed: ${JSON.stringify(created.error)}`);
     account = Array.isArray(created.data) ? created.data[0] : created.data;
+  }
+
+  // Demo mode: grant credits without Stripe so Mission Control can ship end-to-end.
+  if (
+    process.env.DEMO_AUTO_CREDITS === '1' &&
+    account!.apply_credits <= 0 &&
+    account!.plan === 'free'
+  ) {
+    const updated = await client
+      .from<AccountRow>('accounts')
+      .update({ apply_credits: PLAN_CREDITS, plan: 'demo' })
+      .eq('user_id', userId);
+    if (!updated.error) {
+      account = { ...account!, apply_credits: PLAN_CREDITS, plan: 'demo' };
+      log('demo_credits_granted', { user_id: userId, apply_credits: PLAN_CREDITS });
+    }
   }
 
   // Subscription check — grant credits when a plan becomes active.

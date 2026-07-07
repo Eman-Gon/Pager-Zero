@@ -2,4 +2,14 @@
 target-repo/
 node_modules/
 .env
-.rocketride/
+.dev/
+frontend/.env.local
+.rocketride/*
+!.rocketride/docs/
+!.rocketride/docs/**
+.butterbase/*
+!.butterbase/docs/
+!.butterbase/docs/**
+.neo4j/*
+!.neo4j/docs/
+!.neo4j/docs/**

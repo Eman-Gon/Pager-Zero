@@ -116,13 +116,18 @@ export interface Diagnosis {
 
 export class DiagnosisPipeline {
   private client: RocketRideClient;
-  private connected = false;
 
   constructor() {
     this.client = new RocketRideClient({
       auth: process.env.ROCKETRIDE_APIKEY,
       uri: process.env.ROCKETRIDE_URI ?? 'https://api.rocketride.ai',
       requestTimeout: 120_000,
+      // Long-lived responder: reconnect if RocketRide Cloud drops the WebSocket.
+      persist: true,
+      maxRetryTime: 300_000,
+      onDisconnected: async (reason, hasError) => {
+        log('rocketride_disconnected', { reason, hasError });
+      },
       // ${ROCKETRIDE_*} substitutions referenced by diagnose.pipe — this routes
       // the pipeline's LLM node through the Butterbase AI gateway.
       env: {
@@ -136,12 +141,12 @@ export class DiagnosisPipeline {
   }
 
   async ensureConnected(): Promise<void> {
-    if (this.connected) return;
+    // Do not cache "connected" — the WebSocket can drop between requests.
+    if (this.client.isConnected()) return;
     if (!process.env.ROCKETRIDE_APIKEY) {
       throw new Error('ROCKETRIDE_APIKEY not set — cannot reach RocketRide Cloud');
     }
     await this.client.connect();
-    this.connected = true;
     log('rocketride_connected', this.client.getConnectionInfo());
   }
 
