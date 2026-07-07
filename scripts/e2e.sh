@@ -1,0 +1,157 @@
+#!/usr/bin/env bash
+# RescueOps++ final-verification Phase 1: end-to-end happy path.
+# Runs the full incident lifecycle against the LIVE system and asserts each
+# stage. Exits non-zero on the first failure. No mocks — every step hits the
+# real sensor, responder, RocketRide Cloud, Daytona, Butterbase, and GitHub.
+#
+#   ./scripts/e2e.sh
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+SENSOR_URL="${SENSOR_URL:-http://127.0.0.1:3003}"
+RESPONDER_URL="${RESPONDER_URL:-http://127.0.0.1:3004}"
+
+set -a
+# shellcheck disable=SC1091
+source "$ROOT/.env"
+set +a
+
+STEP=0
+step() {
+  STEP=$((STEP + 1))
+  echo ""
+  echo "=== step $STEP: $1"
+}
+
+fail() {
+  echo "FAIL  $*"
+  exit 1
+}
+
+ok() {
+  echo "OK    $*"
+}
+
+# --- step 1: reset, sign in, credits > 0 --------------------------------------
+step "reset + sign in + credits"
+"$ROOT/scripts/reset.sh" >/dev/null || fail "reset.sh failed"
+
+TOKEN=$(cd "$ROOT/services/responder" && node --input-type=module -e '
+import { createClient } from "@butterbase/sdk";
+const client = createClient({ appId: process.env.BUTTERBASE_APP_ID, apiUrl: process.env.BUTTERBASE_API_URL || "https://api.butterbase.ai", persistSession: false });
+const res = await client.auth.signIn({ email: process.env.SERVICE_EMAIL, password: process.env.SERVICE_PASSWORD });
+if (res.error || !res.data) { console.error(res.error?.message ?? "no session"); process.exit(1); }
+console.log(res.data.access_token ?? client.getAccessToken());
+process.exit(0);
+') || fail "Butterbase sign-in failed"
+ok "signed in ${SERVICE_EMAIL}"
+
+account=$(curl -sf -m 30 -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/account") || fail "GET /account failed"
+credits_before=$(echo "$account" | jq -r '.apply_credits // 0')
+[[ "$credits_before" -gt 0 ]] || fail "test user has no credits (apply_credits=$credits_before) — cannot ship"
+ok "credits: $credits_before (plan: $(echo "$account" | jq -r '.plan'))"
+
+# --- step 2: break -> incident detected ----------------------------------------
+step "break.sh -> sensor detects incident"
+"$ROOT/scripts/break.sh" >/dev/null || fail "break.sh failed"
+
+incident=""
+for _ in $(seq 1 45); do
+  incident=$(curl -sf -m 10 "$SENSOR_URL/incident" || true)
+  [[ $(echo "$incident" | jq -r '.status // empty') == "incident" ]] && break
+  sleep 2
+done
+[[ $(echo "$incident" | jq -r '.status // empty') == "incident" ]] || fail "sensor never reported an incident: $incident"
+root=$(echo "$incident" | jq -r '.root_cause')
+[[ "$root" == "computeTax" ]] || fail "root_cause is '$root', expected computeTax"
+echo "$incident" | jq -e '.blast_radius | index("invoiceTotal") and index("renderInvoice")' >/dev/null \
+  || fail "blast_radius missing invoiceTotal/renderInvoice: $(echo "$incident" | jq -c '.blast_radius')"
+ok "root_cause=computeTax, blast_radius=$(echo "$incident" | jq -c '.blast_radius')"
+
+# --- step 3: diagnose on RocketRide Cloud ---------------------------------------
+step "POST /diagnose (RocketRide Cloud)"
+# -m 600: a cold pipeline load (restart + LLM service boot) can take minutes.
+diagnosis=$(curl -sf -m 600 -X POST -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/diagnose") || fail "POST /diagnose failed"
+[[ $(echo "$diagnosis" | jq -r '.status') == "incident" ]] || fail "diagnose returned: $diagnosis"
+echo "$diagnosis" | jq -e '.diagnosis.root_cause_explanation | test("computeTax")' >/dev/null \
+  || fail "diagnosis does not name computeTax: $(echo "$diagnosis" | jq -c '.diagnosis.root_cause_explanation')"
+runbook=$(echo "$diagnosis" | jq -r '.diagnosis.cited_runbook // empty')
+[[ -n "$runbook" ]] || fail "diagnosis has no cited_runbook"
+ok "names computeTax, severity=$(echo "$diagnosis" | jq -r '.diagnosis.severity'), cited_runbook=\"$runbook\""
+
+# --- step 4: remediate -> verified in Daytona ------------------------------------
+step "POST /remediate (Daytona sandbox verify — takes minutes)"
+remediation=$(curl -sf -m 900 -X POST -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/remediate") || fail "POST /remediate failed"
+[[ $(echo "$remediation" | jq -r '.verified') == "true" ]] || fail "fix not verified: $(echo "$remediation" | jq -c '{verified, test_output: (.test_output | .[0:300])}')"
+echo "$remediation" | jq -e '.test_output | test("passed|PASS")' >/dev/null \
+  || fail "test_output does not show a passing run"
+ok "verified=true, fix path=$(echo "$remediation" | jq -r '.candidate_fix.path')"
+
+# --- steps 5+6: apply (policy gate -> approval if risky) -> PR + credit + MTTR ----
+step "POST /apply (policy gate + ship)"
+apply_out=$(curl -s -m 300 -X POST -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/apply") || fail "POST /apply failed"
+
+if [[ $(echo "$apply_out" | jq -r '.status // empty') == "pending_approval" ]]; then
+  approval_id=$(echo "$apply_out" | jq -r '.approval_id')
+  ok "policy gated the fix (reasons: $(echo "$apply_out" | jq -c '.reasons')) — approving $approval_id"
+  apply_out=$(curl -s -m 300 -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+    -d '{"decision":"approved"}' "$RESPONDER_URL/approvals/$approval_id") || fail "POST /approvals/$approval_id failed"
+  [[ $(echo "$apply_out" | jq -r '.status') == "approved" ]] || fail "approval did not ship: $apply_out"
+else
+  ok "policy allowed auto-ship"
+fi
+
+pr_url=$(echo "$apply_out" | jq -r '.pr_url // empty')
+mttr=$(echo "$apply_out" | jq -r '.mttr_seconds // 0')
+[[ "$pr_url" == https://github.com/* ]] || fail "no real PR URL in response: $apply_out"
+[[ "$mttr" -gt 0 ]] || fail "MTTR not recorded (mttr_seconds=$mttr)"
+ok "PR: $pr_url  (MTTR ${mttr}s)"
+
+# --- step 7: Butterbase reflects the ship ------------------------------------------
+step "Butterbase state: incident resolved, action applied, credit spent"
+state=$(cd "$ROOT/services/responder" && BB_TOKEN="$TOKEN" node --input-type=module -e '
+import { createClient } from "@butterbase/sdk";
+const client = createClient({ appId: process.env.BUTTERBASE_APP_ID, apiUrl: process.env.BUTTERBASE_API_URL || "https://api.butterbase.ai", persistSession: false });
+client.setAccessToken(process.env.BB_TOKEN);
+const incidents = (await client.from("incidents").select("*")).data ?? [];
+const actions = (await client.from("actions").select("*")).data ?? [];
+const resolved = incidents.filter((i) => i.status === "resolved" && i.mttr_seconds > 0);
+const applied = actions.filter((a) => a.applied === true);
+console.log(JSON.stringify({ resolved: resolved.length, applied: applied.length, open: incidents.filter((i) => i.status === "open").length }));
+process.exit(0);
+') || fail "Butterbase state query failed"
+[[ $(echo "$state" | jq -r '.resolved') -gt 0 ]] || fail "no resolved incident with MTTR in Butterbase: $state"
+[[ $(echo "$state" | jq -r '.applied') -gt 0 ]] || fail "no applied action in Butterbase: $state"
+ok "butterbase: $state"
+
+account_after=$(curl -sf -m 30 -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/account")
+credits_after=$(echo "$account_after" | jq -r '.apply_credits')
+plan_after=$(echo "$account_after" | jq -r '.plan')
+if [[ "$plan_after" == "demo" ]]; then
+  # Demo plan: this Butterbase app blocks `accounts` writes (HTTP 404), so the
+  # decrement is synthetic — spendCredit returns the reduced balance but cannot
+  # persist it. Assert the spend actually happened via the responder's log.
+  grep -q '"event":"demo_credit_spent"' "$ROOT/.dev/responder.log" 2>/dev/null \
+    || fail "no demo_credit_spent event logged — credit was not spent"
+  ok "credits: demo plan (synthetic spend logged; balance stays $credits_after — accounts writes blocked app-side)"
+else
+  [[ "$credits_after" -eq $((credits_before - 1)) ]] \
+    || fail "credit not decremented: before=$credits_before after=$credits_after"
+  ok "credits: $credits_before -> $credits_after"
+fi
+
+# --- step 8: reset -> all green -------------------------------------------------------
+step "reset.sh -> sensor back to ok"
+"$ROOT/scripts/reset.sh" >/dev/null || fail "reset.sh failed"
+final=""
+for _ in $(seq 1 45); do
+  final=$(curl -sf -m 10 "$SENSOR_URL/incident" || true)
+  [[ $(echo "$final" | jq -r '.status // empty') == "ok" ]] && break
+  sleep 2
+done
+[[ $(echo "$final" | jq -r '.status // empty') == "ok" ]] || fail "sensor did not clear after reset: $final"
+ok "incident cleared"
+
+echo ""
+echo "E2E: all $STEP steps green"
+echo "PR opened during this run: $pr_url"

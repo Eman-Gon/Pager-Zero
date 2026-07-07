@@ -122,7 +122,7 @@ EOF
 install_if_needed() {
   local dir=$1
   if [[ ! -d "$dir/node_modules" ]]; then
-    echo "Installing $dir…"
+    echo "Installing $dir ..."
     npm install --prefix "$dir"
   fi
 }

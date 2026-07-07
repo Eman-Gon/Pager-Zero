@@ -1,3 +1,4 @@
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Question, RocketRideClient } from 'rocketride';
@@ -168,17 +169,54 @@ function nativePipelinePreferred(): boolean {
   return process.env.RESCUEOPS_NATIVE_PIPELINE === '1';
 }
 
-function parseDiagnosisResponse(raw: unknown): Diagnosis {
-  let parsed: unknown;
-  if (raw && typeof raw === 'object') {
-    parsed = raw;
-  } else {
-    const text = String(raw ?? '');
+function stripMarkdownFences(text: string): string {
+  return text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+}
+
+/** RocketRide often returns prose in answers[0] and JSON in answers[1] — try newest last. */
+function extractPipelineAnswer(response: unknown): unknown {
+  const pool: unknown[] = [];
+  const r = response as Record<string, unknown> | null;
+  if (r?.data && typeof r.data === 'object') {
+    const data = r.data as Record<string, unknown>;
+    if (data.answer != null) pool.push(data.answer);
+  }
+  if (Array.isArray(r?.answers)) pool.push(...r.answers);
+  if (r?.answer != null) pool.push(r.answer);
+  for (const key of ['text', 'output', 'content'] as const) {
+    const v = r?.[key];
+    if (Array.isArray(v)) pool.push(...v);
+    else if (v != null) pool.push(v);
+  }
+
+  for (let i = pool.length - 1; i >= 0; i--) {
+    const item = pool[i];
+    if (item && typeof item === 'object' && !Array.isArray(item)) return item;
+    const text = stripMarkdownFences(String(item ?? '').trim());
+    if (!text) continue;
     try {
-      parsed = JSON.parse(text);
+      return JSON.parse(text);
     } catch {
-      parsed = parseLooseJson(text);
+      const loose = parseLooseJson(text);
+      if (loose && typeof loose === 'object') return loose;
     }
+  }
+  return null;
+}
+
+function parseDiagnosisResponse(raw: unknown): Diagnosis {
+  let parsed: unknown =
+    raw && typeof raw === 'object' && ('answers' in raw || 'result_types' in raw)
+      ? extractPipelineAnswer(raw)
+      : raw;
+  if (parsed && typeof parsed === 'object') {
+    return validateDiagnosis(parsed);
+  }
+  const text = stripMarkdownFences(String(parsed ?? raw ?? ''));
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    parsed = parseLooseJson(text);
   }
   return validateDiagnosis(parsed);
 }
@@ -237,6 +275,13 @@ export class DiagnosisPipeline {
     return { ...this.client.getConnectionInfo(), pipeline: this.activePipeline ?? undefined };
   }
 
+  /** Eagerly connect and load the pipeline so the first /diagnose is warm —
+   *  a cold load (restart + LLM service boot) can take minutes. */
+  async warmup(): Promise<void> {
+    await this.ensureConnected();
+    await this.ensurePipeline('auto');
+  }
+
   getWaveLog(): string[] {
     return [...this.waveLog];
   }
@@ -253,11 +298,50 @@ export class DiagnosisPipeline {
       query: 'rescueops-diagnose-query',
     };
     const filepath = pathByKind[kind];
-    const { token } = await this.client.use({ filepath });
+    const spec = JSON.parse(await readFile(filepath, 'utf8')) as Record<string, unknown> & {
+      project_id?: string;
+      source?: string;
+    };
+    let token: string;
+    try {
+      // Attach to a healthy already-running instance (a previous responder
+      // process may have left one — use() is expensive and instances persist
+      // server-side), or start one; then wait until it can take a chat.
+      ({ token } = await this.client.use({ filepath, useExisting: true }));
+      await this.waitTaskRunning(token);
+    } catch (err) {
+      // Stale, stopped, or wedged task — terminate it and start a fresh
+      // execution in one server round-trip, then wait for readiness.
+      log('rocketride_pipeline_restart', { pipeline: nameByKind[kind], reason: String(err) });
+      if (!spec.project_id || !spec.source) throw err;
+      await this.client.restart({ projectId: spec.project_id, source: spec.source, pipeline: spec });
+      const fresh = await this.client.getTaskToken({ projectId: spec.project_id, source: spec.source });
+      if (!fresh) throw new Error(`pipeline ${nameByKind[kind]} did not restart`);
+      token = fresh;
+      await this.waitTaskRunning(token);
+    }
     this.pipelineToken = token;
     this.activePipeline = kind;
     log('rocketride_pipeline_loaded', { pipeline: nameByKind[kind], token });
     return token;
+  }
+
+  /** Poll until the task reports RUNNING (3); throw on stopped states. */
+  private async waitTaskRunning(token: string, timeoutMs = 60_000): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    for (;;) {
+      const st = (await this.client.getTaskStatus(token).catch(() => null)) as
+        | { state?: number }
+        | number
+        | null;
+      const state = typeof st === 'number' ? st : st?.state;
+      if (state === 3) return;
+      if (state === 4 || state === 5 || state === 6) {
+        throw new Error(`pipeline task not running (state ${state})`);
+      }
+      if (Date.now() > deadline) throw new Error('pipeline task never reached RUNNING');
+      await new Promise((r) => setTimeout(r, 1000));
+    }
   }
 
   /** Cerberus-style: native → agent → query; cache token across requests. */
@@ -313,9 +397,8 @@ export class DiagnosisPipeline {
 
   private async runOnce(token: string, context: string, kind: PipelineKind): Promise<Diagnosis> {
     this.waveLog = [];
-    const response: any = await this.client.chat({ token, question: this.buildQuestion(context, kind) });
-    const raw: unknown = response?.data?.answer ?? response?.answers?.[0];
-    return parseDiagnosisResponse(raw);
+    const response: unknown = await this.client.chat({ token, question: this.buildQuestion(context, kind) });
+    return parseDiagnosisResponse(response);
   }
 
   async diagnose(context: string): Promise<Diagnosis> {
@@ -334,10 +417,13 @@ export class DiagnosisPipeline {
         return diagnosis;
       } catch (err) {
         log('diagnose_pipeline_retry', { pipeline: kind, error: String(err) });
-        if (kind === 'query') throw err;
-        // Agent/native returned garbage — fall back to query pipe with full context.
-        this.clearPipeline();
-        ({ token, kind } = await this.ensurePipeline('query'));
+        // Agent/native returned garbage — fall back to query pipe with full
+        // context. A bad query answer gets one more attempt: LLM formatting
+        // flakes (non-JSON answers) are transient, and query is the last rung.
+        if (kind !== 'query') {
+          this.clearPipeline();
+          ({ token, kind } = await this.ensurePipeline('query'));
+        }
         const diagnosis = await this.runOnce(token, context, 'query');
         log('diagnose_pipeline_done', { pipeline: kind, fallback: true, severity: diagnosis.severity });
         return diagnosis;

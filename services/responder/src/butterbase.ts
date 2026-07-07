@@ -6,7 +6,9 @@ import type { CandidateFix, Diagnosis } from './pipeline.js';
 import type { Incident } from './context.js';
 
 const APP_ID = process.env.BUTTERBASE_APP_ID ?? '';
-const API_URL = process.env.BUTTERBASE_API_URL ?? 'https://api.butterbase.ai';
+// Trailing slash stripped: the SDK concatenates paths, and `…ai//auth/...`
+// 404s on the Butterbase data plane.
+const API_URL = (process.env.BUTTERBASE_API_URL ?? 'https://api.butterbase.ai').replace(/\/+$/, '');
 // Credits granted per active subscription cycle of the plan (M5 Phase 2).
 const PLAN_CREDITS = Number(process.env.BUTTERBASE_PLAN_CREDITS ?? 5);
 // Unlimited mode: bypass the paywall entirely so applies/ships never get
@@ -97,7 +99,8 @@ function packCandidateFix(
   if (!fix) return null;
   const payload: StoredActionPayload = { ...fix };
   if (action.test_output || action.results?.length) {
-    payload.sandbox = { test_output: action.test_output, results: action.results };
+    // Postgres text/jsonb rejects NUL (22P05); sandbox output can contain it.
+    payload.sandbox = { test_output: action.test_output?.replace(/\u0000/g, ''), results: action.results };
   }
   return payload;
 }

@@ -423,3 +423,7 @@ log('listening', { port: PORT });
 // Opt-in autonomous mode (AUTONOMOUS=1): watch the sensor and drive
 // diagnose → remediate → apply for new incidents with no human in the loop.
 startAutonomousLoop({ sensorUrl: SENSOR_URL, selfUrl: `http://localhost:${PORT}` });
+
+// Fire-and-forget: pre-load the Cloud pipeline so the first /diagnose is warm —
+// a cold load (restart + LLM service boot) can take minutes.
+pipeline.warmup().catch((err) => log('pipeline_warmup_flagged', { error: String(err) }));

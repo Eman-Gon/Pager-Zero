@@ -38,17 +38,26 @@ function client(): Daytona {
 async function packRepo(targetDir: string): Promise<string> {
   const tmpDir = await mkdtemp(path.join(os.tmpdir(), 'verify-'));
   const tarball = path.join(tmpDir, 'repo.tgz');
-  await execFileAsync('tar', [
-    '-czf',
-    tarball,
-    '-C',
-    targetDir,
-    '--exclude',
-    'node_modules',
-    '--exclude',
-    '.git',
-    '.',
-  ]);
+  // COPYFILE_DISABLE: macOS bsdtar otherwise embeds AppleDouble (._*) metadata
+  // files, which extract as real files on Linux and match vitest's test glob —
+  // phantom failing "tests" that reject every candidate.
+  await execFileAsync(
+    'tar',
+    [
+      '-czf',
+      tarball,
+      '-C',
+      targetDir,
+      '--exclude',
+      'node_modules',
+      '--exclude',
+      '.git',
+      '--exclude',
+      '._*',
+      '.',
+    ],
+    { env: { ...process.env, COPYFILE_DISABLE: '1' } },
+  );
   return tarball;
 }
 
@@ -121,10 +130,15 @@ export async function ensureSnapshot(targetDir: string): Promise<string> {
   // Stage the repo without node_modules/.git as the image build context.
   const stage = await mkdtemp(path.join(os.tmpdir(), 'snap-'));
   try {
-    await execFileAsync('sh', [
-      '-c',
-      `tar -C ${JSON.stringify(targetDir)} --exclude node_modules --exclude .git -cf - . | tar -xf - -C ${JSON.stringify(stage)}`,
-    ]);
+    await execFileAsync(
+      'sh',
+      [
+        '-c',
+        `tar -C ${JSON.stringify(targetDir)} --exclude node_modules --exclude .git --exclude '._*' -cf - . | tar -xf - -C ${JSON.stringify(stage)}`,
+      ],
+      // See packRepo: keep macOS AppleDouble files out of the snapshot too.
+      { env: { ...process.env, COPYFILE_DISABLE: '1' } },
+    );
     const image = Image.base('node:20-slim')
       .addLocalDir(stage, SNAPSHOT_REPO_DIR)
       // chmod: the image builds as root; sandboxes run as an unprivileged user
