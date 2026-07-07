@@ -4,7 +4,15 @@ import { assembleContext, functionFile, type Incident } from './context.js';
 import { log } from './log.js';
 import { createDriver } from './neo4j-config.js';
 import { DiagnosisPipeline, type CandidateFix, type Diagnosis, rocketrideConfigured } from './pipeline.js';
-import { ensureRunbookSubstrate, retrieveRunbooks } from './runbooks.js';
+import { ensureRunbookSubstrate, retrieveRunbooks, runbookDocs } from './runbooks.js';
+import {
+  ingestKnowledge,
+  knowledgeEnabled,
+  memoryEnabled,
+  recallEpisodes,
+  rememberIncident,
+  retrieveKnowledge,
+} from './knowledge.js';
 import { verifyCandidate, verifyCandidatesParallel } from './verify.js';
 import {
   PaywallError,
@@ -52,6 +60,12 @@ const pipeline = new DiagnosisPipeline();
 // Best-effort at startup; repeated per /diagnose because the sensor may not
 // have written the Function nodes yet when the responder first boots.
 await ensureRunbookSubstrate(driver).catch((err) => log('runbook_seed_error', { error: String(err) }));
+
+// Integration 1: when Cognee is enabled, ingest the runbook corpus into the
+// knowledge graph in the background (cognify is slow — never block startup).
+if (knowledgeEnabled()) {
+  void ingestKnowledge(runbookDocs()).catch((err) => log('knowledge_ingest_error', { error: String(err) }));
+}
 
 const app = Fastify();
 
@@ -125,6 +139,24 @@ async function runDiagnosis(candidates = 1): Promise<
   }
 
   let context = await assembleContext(driver, TARGET_DIR, incident, runbooks);
+
+  // Integration 1 & 3: enrich the prompt with Cognee knowledge-graph hits and
+  // recalled prior incidents. Both are best-effort and additive — the existing
+  // graph-boosted runbook context above is untouched when Cognee is off/down.
+  const query = incident.root_cause
+    ? `Incident on ${incident.root_cause}. Failing tests: ${incident.failing_tests.join(', ')}. Affected: ${incident.blast_radius.join(', ')}.`
+    : `Failing tests: ${incident.failing_tests.join(', ')}.`;
+  if (knowledgeEnabled()) {
+    const hits = await retrieveKnowledge(query);
+    if (hits?.length) context += `\n## Knowledge graph (Cognee)\n${hits.map((h) => `- ${h}`).join('\n')}`;
+  }
+  if (memoryEnabled()) {
+    const priors = await recallEpisodes(query);
+    if (priors?.length) {
+      context += `\n## Prior incidents (agent memory)\nWe have handled similar incidents before — prefer a fix consistent with what worked:\n${priors.map((p) => `- ${p}`).join('\n')}`;
+    }
+  }
+
   if (candidates > 1) {
     context += `\n## Candidates requested\nReturn ${candidates} candidate variants in candidate_fixes.`;
   }
@@ -176,6 +208,19 @@ async function shipVerifiedFix(
   });
 
   const { mttr_seconds } = await markApplied(token, pending.action, pending.incident);
+
+  // Integration 3: remember this shipped fix as long-term agent memory (persisted
+  // in Neo4j via Cognee) so future diagnoses — and restarted / sandboxed agents —
+  // recall what worked. Fire-and-forget; no-ops when memory is disabled.
+  void rememberIncident({
+    root_cause: pending.incident.root_cause,
+    failing_tests: live?.status === 'incident' ? live.failing_tests : [],
+    fix_path: pending.action.candidate_fix?.path,
+    fix_summary: pending.incident.severity ? `severity ${pending.incident.severity}` : undefined,
+    verified: true,
+    pr_url,
+  }).catch((err) => log('remember_failed', { error: String(err) }));
+
   return { pr_url, branch, mttr_seconds };
 }
 

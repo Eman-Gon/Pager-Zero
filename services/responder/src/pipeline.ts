@@ -3,7 +3,14 @@ import { fileURLToPath } from 'node:url';
 import { Question, RocketRideClient } from 'rocketride';
 import { log } from './log.js';
 
-const PIPE_PATH = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'diagnose.pipe');
+const RESPONDER_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+// Native pipe: reaches Neo4j via RocketRide's own db_neo4j component and adds the
+// native tool_butterbase — "all three sponsor tools inside RocketRide". Opt-in.
+const NATIVE_PIPELINE_PATH = path.join(RESPONDER_DIR, 'rescueops-diagnose-native.pipe');
+const AGENT_PIPELINE_PATH = path.join(RESPONDER_DIR, 'rescueops-diagnose-agent.pipe');
+const QUERY_PIPELINE_PATH = path.join(RESPONDER_DIR, 'rescueops-diagnose-query.pipe');
+/** @deprecated Use rescueops-diagnose-query.pipe — kept for reference */
+const LEGACY_PIPELINE_PATH = path.join(RESPONDER_DIR, 'diagnose.pipe');
 
 // Fallback when the model wraps its JSON in prose or ```json fences.
 function parseLooseJson(text: string): unknown {
@@ -122,34 +129,92 @@ export function rocketrideConfigured(): boolean {
   return isLocalRocketRideUri() || Boolean(process.env.ROCKETRIDE_APIKEY);
 }
 
+function neo4jBasicAuth(): string {
+  if (process.env.ROCKETRIDE_NEO4J_BASIC_AUTH) return process.env.ROCKETRIDE_NEO4J_BASIC_AUTH;
+  const user = process.env.NEO4J_USERNAME ?? process.env.NEO4J_USER ?? 'neo4j';
+  const pass = process.env.NEO4J_PASSWORD ?? '';
+  return Buffer.from(`${user}:${pass}`).toString('base64');
+}
+
+// Integration 4: the diagnosis LLM gateway is provider-switchable. Default is the
+// Butterbase AI gateway; LLM_PROVIDER=nebius routes inference through Nebius Token
+// Factory (OpenAI-compatible) so the stack isn't locked to one model provider —
+// Nebius already powers embeddings, this extends it to inference.
+function gatewayConfig(): { url: string; key: string; model: string } {
+  if (process.env.LLM_PROVIDER === 'nebius') {
+    return {
+      url: (process.env.NEBIUS_BASE_URL ?? 'https://api.tokenfactory.nebius.com/v1').replace(/\/$/, ''),
+      key: process.env.NEBIUS_API_KEY ?? '',
+      model: process.env.NEBIUS_CHAT_MODEL ?? 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+    };
+  }
+  return {
+    url: process.env.BUTTERBASE_GATEWAY_URL ?? 'https://api.butterbase.ai/v1',
+    key: process.env.BUTTERBASE_API_KEY ?? '',
+    model: process.env.BUTTERBASE_CHAT_MODEL ?? 'anthropic/claude-sonnet-4.6',
+  };
+}
+
+function rocketrideEnv(): Record<string, string> {
+  const gw = gatewayConfig();
+  const neo4jUri = process.env.NEO4J_URL ?? process.env.NEO4J_URI ?? 'neo4j://localhost:7687';
+  return {
+    // The pipe's LLM node reads these regardless of provider (Butterbase or Nebius).
+    ROCKETRIDE_BUTTERBASE_GATEWAY_URL: gw.url,
+    ROCKETRIDE_BUTTERBASE_API_KEY: gw.key,
+    ROCKETRIDE_BUTTERBASE_MODEL: gw.model,
+    ROCKETRIDE_BUTTERBASE_MCP_ENDPOINT: process.env.BUTTERBASE_MCP_ENDPOINT ?? 'https://api.butterbase.ai/mcp',
+    // Generic MCP bridge (existing agent pipe).
+    NEO4J_MCP_ENDPOINT: process.env.NEO4J_MCP_ENDPOINT ?? 'http://localhost:8787/mcp',
+    ROCKETRIDE_NEO4J_BASIC_AUTH: neo4jBasicAuth(),
+    // Native db_neo4j component (native pipe): engine connects to Neo4j directly.
+    ROCKETRIDE_NEO4J_URI: neo4jUri,
+    ROCKETRIDE_NEO4J_USER: process.env.NEO4J_USERNAME ?? process.env.NEO4J_USER ?? 'neo4j',
+    ROCKETRIDE_NEO4J_PASSWORD: process.env.NEO4J_PASSWORD ?? '',
+    ROCKETRIDE_NEO4J_DATABASE: process.env.NEO4J_DATABASE || 'neo4j',
+  };
+}
+
+function parseDiagnosisResponse(raw: unknown): Diagnosis {
+  let parsed: unknown;
+  if (raw && typeof raw === 'object') {
+    parsed = raw;
+  } else {
+    const text = String(raw ?? '');
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = parseLooseJson(text);
+    }
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error(`pipeline returned non-JSON answer: ${String(raw).slice(0, 300)}`);
+  }
+  return parsed as Diagnosis;
+}
+
 export class DiagnosisPipeline {
   private client: RocketRideClient;
+  private pipelineToken: string | null = null;
+  private activePipeline: 'native' | 'agent' | 'query' | null = null;
 
   constructor() {
     this.client = new RocketRideClient({
       auth: process.env.ROCKETRIDE_APIKEY,
       uri: process.env.ROCKETRIDE_URI ?? 'https://api.rocketride.ai',
-      requestTimeout: 120_000,
-      // Connect on demand (/diagnose) — avoid background reconnect storms when Cloud is flaky.
+      requestTimeout: 180_000,
       persist: false,
       maxRetryTime: 60_000,
       onDisconnected: async (reason, hasError) => {
         log('rocketride_disconnected', { reason, hasError });
+        this.pipelineToken = null;
+        this.activePipeline = null;
       },
-      // ${ROCKETRIDE_*} substitutions referenced by diagnose.pipe — this routes
-      // the pipeline's LLM node through the Butterbase AI gateway.
-      env: {
-        ROCKETRIDE_BUTTERBASE_GATEWAY_URL:
-          process.env.BUTTERBASE_GATEWAY_URL ?? 'https://api.butterbase.ai/v1',
-        ROCKETRIDE_BUTTERBASE_API_KEY: process.env.BUTTERBASE_API_KEY ?? '',
-        ROCKETRIDE_BUTTERBASE_MODEL:
-          process.env.BUTTERBASE_CHAT_MODEL ?? 'anthropic/claude-sonnet-4.6',
-      },
+      env: rocketrideEnv(),
     });
   }
 
   async ensureConnected(): Promise<void> {
-    // Do not cache "connected" — the WebSocket can drop between requests.
     if (this.client.isConnected()) return;
     if (!rocketrideConfigured()) {
       throw new Error('ROCKETRIDE_APIKEY not set — cannot reach RocketRide Cloud');
@@ -158,38 +223,89 @@ export class DiagnosisPipeline {
     log('rocketride_connected', this.client.getConnectionInfo());
   }
 
-  connectionInfo(): { connected: boolean; transport: string; uri: string } {
-    return this.client.getConnectionInfo();
+  connectionInfo(): { connected: boolean; transport: string; uri: string; pipeline?: string } {
+    return { ...this.client.getConnectionInfo(), pipeline: this.activePipeline ?? undefined };
+  }
+
+  /** Cerberus-style: native/agent pipeline first (tools + waves), query fallback. */
+  private async loadPipeline(): Promise<string> {
+    if (this.pipelineToken) return this.pipelineToken;
+
+    // Integration 2: opt-in native pipe (db_neo4j + tool_butterbase). Preferred
+    // above the agent pipe when enabled; falls through to it on any failure.
+    if (process.env.RESCUEOPS_NATIVE_PIPELINE === '1') {
+      try {
+        const { token } = await this.client.use({ filepath: NATIVE_PIPELINE_PATH });
+        this.pipelineToken = token;
+        this.activePipeline = 'native';
+        log('rocketride_pipeline_loaded', { pipeline: 'rescueops-diagnose-native', token });
+        return token;
+      } catch (err) {
+        log('rocketride_native_pipeline_failed', { error: String(err) });
+      }
+    }
+
+    const preferAgent = process.env.RESCUEOPS_AGENT_PIPELINE !== '0';
+    if (preferAgent) {
+      try {
+        const { token } = await this.client.use({ filepath: AGENT_PIPELINE_PATH });
+        this.pipelineToken = token;
+        this.activePipeline = 'agent';
+        log('rocketride_pipeline_loaded', { pipeline: 'rescueops-diagnose-agent', token });
+        return token;
+      } catch (err) {
+        log('rocketride_agent_pipeline_failed', { error: String(err) });
+      }
+    }
+
+    for (const [name, filepath] of [
+      ['rescueops-diagnose-query', QUERY_PIPELINE_PATH],
+      ['diagnose', LEGACY_PIPELINE_PATH],
+    ] as const) {
+      try {
+        const { token } = await this.client.use({ filepath });
+        this.pipelineToken = token;
+        this.activePipeline = 'query';
+        log('rocketride_pipeline_loaded', { pipeline: name, token });
+        return token;
+      } catch (err) {
+        log('rocketride_pipeline_failed', { pipeline: name, error: String(err) });
+      }
+    }
+
+    throw new Error('no RocketRide diagnose pipeline could be loaded');
   }
 
   async diagnose(context: string): Promise<Diagnosis> {
     await this.ensureConnected();
-    const { token } = await this.client.use({ filepath: PIPE_PATH });
+    const token = await this.loadPipeline();
     try {
-      // expectJson:false — with expectJson the SDK throws inside chat() when
-      // the model wraps its JSON in fences; we parse (strict, then loose) here.
       const question = new Question({ expectJson: false });
-      question.addQuestion(context);
-      const response: any = await this.client.chat({ token, question });
-
-      const raw: unknown = response?.data?.answer ?? response?.answers?.[0];
-      let parsed: unknown;
-      if (raw && typeof raw === 'object') {
-        parsed = raw;
+      if (this.activePipeline === 'native') {
+        question.addQuestion(
+          `${context}\n\n---\nUse your native Neo4j graph tool (ask natural-language questions — do NOT write Cypher) to explore the code graph (Function, Test, Runbook), store key findings in memory across waves, score blast radius with python.execute, then return ONLY the JSON diagnosis object described in your instructions.`,
+        );
+      } else if (this.activePipeline === 'agent') {
+        question.addQuestion(
+          `${context}\n\n---\nUse your Neo4j MCP tools to explore the code graph (Function, Test, Runbook), store key findings in memory across waves, score blast radius with python.execute, then return ONLY the JSON diagnosis object described in your instructions.`,
+        );
       } else {
-        const text = String(raw ?? '');
-        try {
-          parsed = JSON.parse(text);
-        } catch {
-          parsed = parseLooseJson(text);
-        }
+        question.addQuestion(context);
       }
-      if (!parsed || typeof parsed !== 'object') {
-        throw new Error(`pipeline returned non-JSON answer: ${String(raw).slice(0, 300)}`);
-      }
-      return parsed as Diagnosis;
+
+      const response: any = await this.client.chat({ token, question });
+      const raw: unknown = response?.data?.answer ?? response?.answers?.[0];
+      const diagnosis = parseDiagnosisResponse(raw);
+      log('diagnose_pipeline_done', {
+        pipeline: this.activePipeline,
+        severity: diagnosis.severity,
+        cited_runbook: diagnosis.cited_runbook,
+      });
+      return diagnosis;
     } finally {
       await this.client.terminate(token).catch((err: unknown) => log('terminate_failed', { error: String(err) }));
+      this.pipelineToken = null;
+      this.activePipeline = null;
     }
   }
 }

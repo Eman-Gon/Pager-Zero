@@ -35,6 +35,13 @@ const RUNBOOKS: { title: string; text: string; appliesTo: string[] }[] = [
 
 const INDEX_NAME = 'runbook_vec';
 
+// The runbook corpus as plain docs, so the Cognee memory service can ingest the
+// same source material into its knowledge graph (Integration 1). This is the
+// seed corpus — extend with real postmortems later.
+export function runbookDocs(): { title: string; text: string }[] {
+  return RUNBOOKS.map(({ title, text }) => ({ title, text }));
+}
+
 function nebiusEnv(): { base: string; key: string; model: string } | null {
   const key = process.env.NEBIUS_API_KEY;
   const model = process.env.NEBIUS_EMBED_MODEL;
