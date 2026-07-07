@@ -1,5 +1,16 @@
 import { useEffect, useState } from 'react';
+import { ActionProgress, ResultBadge } from '../components/ActionProgress';
+import TerminalOut from '../components/TerminalOut';
 import { fetchPersistedActions, remediate, type ActionRow, type Incident } from '../api';
+
+const REMEDIATE_STEPS = [
+  { id: 'load', label: 'Candidate', detail: 'Load fix from diagnose trace' },
+  { id: 'pack', label: 'Pack repo', detail: 'Tar target-repo for upload' },
+  { id: 'sandbox', label: 'Daytona', detail: 'Create cloud sandbox' },
+  { id: 'install', label: 'Install', detail: 'npm install in sandbox' },
+  { id: 'test', label: 'Verify', detail: 'Apply patch + npm test' },
+  { id: 'persist', label: 'Butterbase', detail: 'Save sandbox output' },
+];
 
 interface RemediateResult {
   verified: boolean;
@@ -16,7 +27,7 @@ function sandboxFromAction(row: ActionRow | null): RemediateResult | null {
   if (!sandbox?.test_output && !row.verified) return null;
   return {
     verified: row.verified,
-    test_output: sandbox?.test_output ?? '(verified - re-run remediate to refresh output)',
+    test_output: sandbox?.test_output ?? '',
     results: sandbox?.results,
   };
 }
@@ -33,6 +44,7 @@ export default function SandboxPanel({
   onChanged: () => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [result, setResult] = useState<RemediateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
@@ -46,6 +58,7 @@ export default function SandboxPanel({
         if (sandbox) {
           setResult(sandbox);
           setRestored(true);
+          setDone(true);
         }
       })
       .catch(() => {});
@@ -56,6 +69,7 @@ export default function SandboxPanel({
 
   async function run() {
     setBusy(true);
+    setDone(false);
     setError(null);
     setRestored(false);
     try {
@@ -70,6 +84,7 @@ export default function SandboxPanel({
           selected: data.selected,
           results: data.results,
         });
+        setDone(true);
         onChanged();
       }
     } catch (err) {
@@ -80,31 +95,48 @@ export default function SandboxPanel({
   }
 
   return (
-    <div>
-      <div className="row">
+    <div className="panel-stack">
+      <div className="row panel-actions">
         <button disabled={busy || incident?.status !== 'incident'} onClick={run}>
-          {busy ? 'Verifying in Daytona...' : 'Remediate (verify in sandbox)'}
+          {busy ? 'Verifying?' : 'Remediate (verify in sandbox)'}
         </button>
-        {result && (
-          <span className={result.verified ? 'sev-low' : 'sev-high'}>
-            {result.verified ? 'verified' : 'rejected'}
-          </span>
+        {result && !busy && (
+          <ResultBadge kind={result.verified ? 'ok' : 'bad'}>{result.verified ? 'tests passed' : 'tests failed'}</ResultBadge>
         )}
-        {restored && result && <span className="muted">restored from Butterbase</span>}
+        {restored && result && !busy && <ResultBadge kind="info">restored from Butterbase</ResultBadge>}
       </div>
+
+      <ActionProgress
+        steps={REMEDIATE_STEPS}
+        active={busy}
+        done={done && !!result && !error}
+        error={!!error}
+        title="Daytona sandbox verify"
+      />
+
       {error && <div className="err">{error}</div>}
-      {result?.results && (
-        <div className="kv">
-          <b>candidates</b>
+
+      {result?.results && !busy && (
+        <div className="candidate-chips">
           {result.results.map((r) => (
-            <span key={r.candidate_index} className={r.verified ? 'sev-low' : 'sev-high'} style={{ marginRight: 8 }}>
-              #{r.candidate_index} {r.verified ? 'pass' : 'fail'}
-            </span>
+            <ResultBadge key={r.candidate_index} kind={r.verified ? 'ok' : 'bad'}>
+              candidate #{r.candidate_index} {r.verified ? 'pass' : 'fail'}
+            </ResultBadge>
           ))}
         </div>
       )}
-      {result && <pre className="out">{stripAnsi(result.test_output)}</pre>}
-      {!result && !error && <div className="muted">Run remediation to prove the fix against the real test suite.</div>}
+
+      {result && !busy && (
+        <TerminalOut
+          title="vitest output"
+          lines={stripAnsi(result.test_output) || '(verified ? re-run remediate to refresh output)'}
+          variant={result.verified ? 'ok' : 'bad'}
+        />
+      )}
+
+      {!result && !error && !busy && (
+        <div className="muted panel-hint">Run remediation to prove the fix against the real test suite.</div>
+      )}
     </div>
   );
 }

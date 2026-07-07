@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
+import { ActionProgress, ResultBadge } from '../components/ActionProgress';
 import { diagnose, fetchPersistedActions, type Diagnosis, type Incident } from '../api';
+
+const DIAGNOSE_STEPS = [
+  { id: 'sensor', label: 'Sensor', detail: 'Read incident + failing tests' },
+  { id: 'neo4j', label: 'Neo4j', detail: 'Code graph + vector runbooks' },
+  { id: 'rocketride', label: 'RocketRide', detail: 'LLM diagnosis pipeline' },
+  { id: 'persist', label: 'Butterbase', detail: 'Persist agent trace' },
+];
 
 function traceFromPayload(payload: { trace?: Diagnosis } | null | undefined): Diagnosis | null {
   const t = payload?.trace;
@@ -17,6 +25,7 @@ export default function TracePanel({
   tick: number;
 }) {
   const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
   const [result, setResult] = useState<Diagnosis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
@@ -30,6 +39,7 @@ export default function TracePanel({
         if (trace) {
           setResult(trace);
           setRestored(true);
+          setDone(true);
         }
       })
       .catch(() => {});
@@ -40,16 +50,18 @@ export default function TracePanel({
 
   async function run() {
     setBusy(true);
+    setDone(false);
     setError(null);
     setRestored(false);
+    setResult(null);
     try {
       const { status, data } = await diagnose(token);
       if (status !== 200) throw new Error(data.error ?? `HTTP ${status}`);
       if (data.status === 'ok') {
-        setResult(null);
         setError('no incident — nothing to diagnose');
       } else {
         setResult(data.diagnosis);
+        setDone(true);
       }
     } catch (err) {
       setError(String(err));
@@ -59,35 +71,51 @@ export default function TracePanel({
   }
 
   return (
-    <div>
-      <div className="row">
+    <div className="panel-stack">
+      <div className="row panel-actions">
         <button disabled={busy || incident?.status !== 'incident'} onClick={run}>
-          {busy ? 'Reasoning on RocketRide Cloud…' : 'Diagnose'}
+          {busy ? 'Diagnosing…' : 'Diagnose'}
         </button>
-        {restored && result && <span className="muted">restored from Butterbase</span>}
+        {restored && result && !busy && <ResultBadge kind="info">restored from Butterbase</ResultBadge>}
+        {done && result && !busy && <ResultBadge kind="ok">diagnosis complete</ResultBadge>}
       </div>
+
+      <ActionProgress
+        steps={DIAGNOSE_STEPS}
+        active={busy}
+        done={done && !!result && !error}
+        error={!!error}
+        title="Agent diagnosis"
+      />
+
       {error && <div className="err">{error}</div>}
-      {result && (
-        <>
-          <div className="kv">
-            <b>severity</b>
-            <span className={`sev-${result.severity}`}>{result.severity}</span>
+
+      {result && !busy && (
+        <div className="result-card">
+          <div className="result-card-header">
+            <span className="muted">severity</span>
+            <ResultBadge kind={result.severity === 'high' ? 'bad' : result.severity === 'medium' ? 'warn' : 'ok'}>
+              {result.severity}
+            </ResultBadge>
           </div>
-          <div className="kv">
-            <b>root cause</b>
-            {result.root_cause_explanation}
+          <div className="result-block">
+            <div className="result-block-label">Root cause</div>
+            <p>{result.root_cause_explanation}</p>
           </div>
-          <div className="kv">
-            <b>proposed fix</b>
-            {result.proposed_fix_approach}
+          <div className="result-block">
+            <div className="result-block-label">Proposed fix</div>
+            <p>{result.proposed_fix_approach}</p>
           </div>
-          <div className="kv">
-            <b>cited runbook</b>
-            {result.cited_runbook ?? <span className="muted">none</span>}
+          <div className="result-block">
+            <div className="result-block-label">Cited runbook</div>
+            <p>{result.cited_runbook ?? <span className="muted">none</span>}</p>
           </div>
-        </>
+        </div>
       )}
-      {!result && !error && <div className="muted">Run a diagnosis to see the agent's reasoning.</div>}
+
+      {!result && !error && !busy && (
+        <div className="muted panel-hint">Run a diagnosis to see the agent&apos;s reasoning.</div>
+      )}
     </div>
   );
 }
