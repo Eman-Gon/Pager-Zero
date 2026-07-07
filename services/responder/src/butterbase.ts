@@ -447,10 +447,18 @@ export async function spendCredit(token: string): Promise<{ remaining: number }>
   }
   if (account.apply_credits <= 0) throw new PaywallError();
 
-  // Demo mode: credits may be synthetic if Butterbase accounts writes are blocked.
+  // Demo mode: persist the decrement so the balance actually drops on screen
+  // (5→4). This works once the `accounts` table has a primary key — before that
+  // Butterbase blocks the write and we fall back to a synthetic (log-only)
+  // decrement so the demo never hard-stops.
   if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
     const remaining = account.apply_credits - 1;
-    log('demo_credit_spent', { user_id: account.user_id, remaining });
+    const client = userClient(token);
+    const updated = await client
+      .from<AccountRow>('accounts')
+      .update({ apply_credits: remaining })
+      .eq('user_id', account.user_id);
+    log('demo_credit_spent', { user_id: account.user_id, remaining, persisted: !updated.error });
     return { remaining };
   }
 
@@ -473,7 +481,13 @@ export async function refundCredit(token: string): Promise<void> {
   const account = await ensureAccount(token).catch(() => null);
   if (!account) return;
   if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
-    log('demo_credit_refunded', { user_id: account.user_id, remaining: account.apply_credits + 1 });
+    const remaining = account.apply_credits + 1;
+    const client = userClient(token);
+    const updated = await client
+      .from<AccountRow>('accounts')
+      .update({ apply_credits: remaining })
+      .eq('user_id', account.user_id);
+    log('demo_credit_refunded', { user_id: account.user_id, remaining, persisted: !updated.error });
     return;
   }
   const client = userClient(token);

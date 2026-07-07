@@ -127,18 +127,12 @@ ok "butterbase: $state"
 account_after=$(curl -sf -m 30 -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/account")
 credits_after=$(echo "$account_after" | jq -r '.apply_credits')
 plan_after=$(echo "$account_after" | jq -r '.plan')
-if [[ "$plan_after" == "demo" ]]; then
-  # Demo plan: this Butterbase app blocks `accounts` writes (HTTP 404), so the
-  # decrement is synthetic — spendCredit returns the reduced balance but cannot
-  # persist it. Assert the spend actually happened via the responder's log.
-  grep -q '"event":"demo_credit_spent"' "$ROOT/.dev/responder.log" 2>/dev/null \
-    || fail "no demo_credit_spent event logged — credit was not spent"
-  ok "credits: demo plan (synthetic spend logged; balance stays $credits_after — accounts writes blocked app-side)"
-else
-  [[ "$credits_after" -eq $((credits_before - 1)) ]] \
-    || fail "credit not decremented: before=$credits_before after=$credits_after"
-  ok "credits: $credits_before -> $credits_after"
-fi
+# Strict: the balance must actually drop by exactly one. This requires the
+# `accounts` table to have a primary key so Butterbase persists the write —
+# add one with:  ALTER TABLE accounts ADD COLUMN id uuid PRIMARY KEY DEFAULT gen_random_uuid();
+[[ "$credits_after" -eq $((credits_before - 1)) ]] \
+  || fail "credit not decremented: before=$credits_before after=$credits_after (plan=$plan_after) — if the balance did not drop, ensure the accounts table has a primary key so credit writes persist"
+ok "credits: $credits_before -> $credits_after (plan: $plan_after)"
 
 # --- step 8: reset -> all green -------------------------------------------------------
 step "reset.sh -> sensor back to ok"
