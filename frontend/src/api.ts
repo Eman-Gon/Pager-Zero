@@ -65,6 +65,7 @@ export interface HealthStatus {
     github: boolean;
     nebius: boolean;
     rocketride: boolean;
+    opsera?: boolean;
   };
 }
 
