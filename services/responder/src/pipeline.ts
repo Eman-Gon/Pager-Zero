@@ -114,6 +114,14 @@ export interface Diagnosis {
   candidate_fixes?: CandidateFix[];
 }
 
+export function isLocalRocketRideUri(uri = process.env.ROCKETRIDE_URI ?? 'https://api.rocketride.ai'): boolean {
+  return /localhost|127\.0\.0\.1|rocketride:5565/i.test(uri);
+}
+
+export function rocketrideConfigured(): boolean {
+  return isLocalRocketRideUri() || Boolean(process.env.ROCKETRIDE_APIKEY);
+}
+
 export class DiagnosisPipeline {
   private client: RocketRideClient;
 

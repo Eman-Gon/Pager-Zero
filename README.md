@@ -42,6 +42,10 @@ curl -X POST http://localhost:3004/diagnose
 
 5. UI: http://localhost:5173 (`dev-native.sh` starts it; with Docker-only, run `cd frontend && npm run dev`).
 
+## Autonomous mode
+
+By default RescueOps++ waits for a click in Mission Control (`/diagnose`, `/remediate`, `/apply`). Set `AUTONOMOUS=1` in `.env` to make the responder a true autonomous on-call engineer: it watches the sensor and, the moment a new incident appears, runs **diagnose → remediate → apply** itself — no human in the loop. It acts as the service account (`SERVICE_EMAIL` / `SERVICE_PASSWORD`, defaulting to the demo on-call user), so incidents and actions persist under RLS exactly as an operator's would, and the policy gate still applies: risky fixes park as pending approvals rather than auto-shipping a PR. Requires Butterbase to be configured. Tune the watch cadence with `AUTONOMOUS_POLL_MS` (default 5000).
+
 ## RocketRide (diagnosis pipeline)
 
 RescueOps++ runs its diagnosis pipeline on **RocketRide Cloud** — not a local engine. The pipeline file is `services/responder/diagnose.pipe`; the SDK client is in `services/responder/src/pipeline.ts`.
