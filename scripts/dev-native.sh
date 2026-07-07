@@ -125,18 +125,23 @@ install_if_needed() {
 
 start_bg() {
   local name=$1 pidfile=$2 logfile=$3 workdir=$4 port=$5
+  local launcher="$PID_DIR/launch-$name.sh"
   mkdir -p "$PID_DIR"
-  # nohup so sensor/responder survive when this script's shell exits (e.g. CI/agents).
-  nohup bash -c "
-    cd $(printf '%q' "$workdir")
-    set -a
-    source $(printf '%q' "$ROOT/.env")
-    set +a
-    export TARGET_DIR=$(printf '%q' "$TARGET")
-    export SENSOR_URL=${SENSOR_URL:-http://localhost:3003}
-    export PORT=$port
-    exec npm start
-  " >"$logfile" 2>&1 &
+  cat >"$launcher" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd $(printf '%q' "$workdir")
+set -a
+source $(printf '%q' "$ROOT/.env")
+set +a
+export TARGET_DIR=$(printf '%q' "$TARGET")
+export SENSOR_URL=${SENSOR_URL:-http://localhost:3003}
+export PORT=$port
+exec npm start
+EOF
+  chmod +x "$launcher"
+  : >"$logfile"
+  nohup "$launcher" >>"$logfile" 2>&1 < /dev/null &
   echo $! >"$pidfile"
   disown "$(cat "$pidfile")" 2>/dev/null || true
   echo "Started $name on :$port (pid $(cat "$pidfile"), log $logfile)"
@@ -187,10 +192,16 @@ start_all() {
   if [[ -n "$owner" ]]; then
     echo "Frontend already listening on :5173 ($owner) — leaving it running."
   else
-    (
-      cd "$ROOT/frontend"
-      exec npm run dev -- --host 127.0.0.1 --port 5173
-    ) >"$FRONTEND_LOG" 2>&1 &
+    local flauncher="$PID_DIR/launch-frontend.sh"
+    cat >"$flauncher" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd $(printf '%q' "$ROOT/frontend")
+exec npm run dev -- --host 0.0.0.0 --port 5173
+EOF
+    chmod +x "$flauncher"
+    : >"$FRONTEND_LOG"
+    nohup "$flauncher" >>"$FRONTEND_LOG" 2>&1 < /dev/null &
     echo $! >"$FRONTEND_PID"
     disown "$(cat "$FRONTEND_PID")" 2>/dev/null || true
     echo "Started frontend on :5173 (pid $(cat "$FRONTEND_PID"), log $FRONTEND_LOG)"
@@ -198,14 +209,35 @@ start_all() {
   fi
 
   echo ""
-  echo "Mission Control → http://localhost:5173"
-  echo "Sensor          → http://localhost:3003/incident"
-  echo "Responder       → http://localhost:3004/connection"
+  echo "Mission Control → http://127.0.0.1:5173"
+  echo "  (use 127.0.0.1 — http://localhost:5173 can fail on IPv6)"
+  echo "Sensor          → http://127.0.0.1:3003/incident"
+  echo "Responder       → http://127.0.0.1:3004/connection"
   echo "Neo4j shell     → ./scripts/cypher-shell.sh"
   echo ""
   echo "Seed incident   → ./scripts/break.sh"
   echo "Stop everything → ./scripts/dev-native.sh stop"
   echo "Logs            → tail -f $PID_DIR/*.log"
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    open "http://127.0.0.1:5173" 2>/dev/null || true
+  fi
+
+  # Keep this terminal session alive so services are not orphaned/killed.
+  if [[ -t 1 ]]; then
+    echo ""
+    echo "Services running — leave this tab open (Ctrl+C to stop)."
+    trap 'stop_all; exit 0' INT TERM
+    while true; do
+      for f in "$SENSOR_PID" "$RESPONDER_PID" "$FRONTEND_PID"; do
+        if [[ -f "$f" ]] && ! kill -0 "$(cat "$f")" 2>/dev/null; then
+          echo "A service exited unexpectedly — check logs in $PID_DIR/"
+          stop_all
+          exit 1
+        fi
+      done
+      sleep 3
+    done
+  fi
 }
 
 case "${1:-start}" in

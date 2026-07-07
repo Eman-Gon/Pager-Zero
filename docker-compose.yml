@@ -1,8 +1,11 @@
 services:
   rocketride:
     # GHCR image is linux/amd64 only — Apple Silicon runs it via emulation.
+    # Built from services/rocketride/Dockerfile, which pre-seeds a working `uv`
+    # so the engine's startup bootstrap doesn't crash under emulation.
     platform: linux/amd64
-    image: ghcr.io/rocketride-org/rocketride-engine:latest
+    build: ./services/rocketride
+    image: rescueops/rocketride-engine:patched
     ports:
       - "5565:5565"
     healthcheck:

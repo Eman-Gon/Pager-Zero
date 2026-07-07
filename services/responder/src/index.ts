@@ -25,6 +25,7 @@ import {
 } from './butterbase.js';
 import { evaluatePolicy } from './policy.js';
 import { githubConfigured, openFixPr } from './ship.js';
+import { startAutonomousLoop } from './autonomous.js';
 
 const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
@@ -259,24 +260,6 @@ app.post('/approvals/:id', async (request, reply) => {
   }
 });
 
-// M5 Phase 2: the guarded stub for the real apply (M6). Spending a credit is
-// load-bearing: free tier (0 credits) is paywalled until a subscription
-// grants credits.
-app.post('/apply-stub', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (!token) return { error: 'sign in first — Bearer token required' };
-  try {
-    const { remaining } = await spendCredit(token);
-    return { applied: 'stub', credits_remaining: remaining };
-  } catch (err) {
-    if (err instanceof PaywallError) {
-      reply.code(402);
-      return { error: 'payment_required', message: err.message };
-    }
-    throw err;
-  }
-});
-
 // M4: diagnosis + candidate fix, proven against the real test suite in a
 // Daytona sandbox.
 //   default            → single pipeline candidate, fresh sandbox   (Phase 1)
@@ -390,3 +373,7 @@ app.setErrorHandler((error, _request, reply) => {
 
 await app.listen({ port: PORT, host: '0.0.0.0' });
 log('listening', { port: PORT });
+
+// Opt-in autonomous mode (AUTONOMOUS=1): watch the sensor and drive
+// diagnose → remediate → apply for new incidents with no human in the loop.
+startAutonomousLoop({ sensorUrl: SENSOR_URL, selfUrl: `http://localhost:${PORT}` });

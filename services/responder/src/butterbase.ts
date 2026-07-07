@@ -39,6 +39,19 @@ export function bearerToken(header: string | undefined): string | null {
   return m ? m[1] : null;
 }
 
+// Sign in as the service (on-call) account and return a fresh access token.
+// Used by the autonomous loop, which acts as this user so incidents/actions
+// persist under RLS exactly as a human operator's would. Mirrors the frontend
+// sign-in: the token is on the session `data`, with getAccessToken() as fallback.
+export async function signInService(email: string, password: string): Promise<string> {
+  const client = createClient({ appId: APP_ID, apiUrl: API_URL, persistSession: false });
+  const res = await client.auth.signIn({ email, password });
+  if (res.error || !res.data) throw res.error ?? new Error('service sign-in returned no session');
+  const token = (res.data as { access_token?: string }).access_token ?? client.getAccessToken();
+  if (!token) throw new Error('service sign-in returned no access token');
+  return token;
+}
+
 // The user id is the JWT's sub claim (RLS keys rows to it).
 export function userIdFromToken(token: string): string {
   const payload = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
