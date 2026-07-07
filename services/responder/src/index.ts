@@ -1,0 +1,332 @@
+import Fastify from 'fastify';
+import neo4j, { type Driver } from 'neo4j-driver';
+import { assembleContext, functionFile, type Incident } from './context.js';
+import { log } from './log.js';
+import { DiagnosisPipeline, type CandidateFix, type Diagnosis } from './pipeline.js';
+import { ensureRunbookSubstrate, retrieveRunbooks } from './runbooks.js';
+import { verifyCandidate, verifyCandidatesParallel } from './verify.js';
+import {
+  PaywallError,
+  actionWithIncident,
+  bearerToken,
+  butterbaseConfigured,
+  createApproval,
+  getApproval,
+  latestVerifiedAction,
+  markApplied,
+  recordIncidentAction,
+  setApprovalStatus,
+  spendCredit,
+  type ActionRow,
+  type StoredIncidentRow,
+} from './butterbase.js';
+import { evaluatePolicy } from './policy.js';
+import { openFixPr } from './ship.js';
+
+const NEO4J_URL = process.env.NEO4J_URL ?? 'bolt://localhost:7687';
+const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
+const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'devpassword';
+const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
+const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
+const PORT = Number(process.env.PORT ?? 3004);
+
+async function connectWithRetry(): Promise<Driver> {
+  const driver = neo4j.driver(NEO4J_URL, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await driver.verifyConnectivity();
+      log('neo4j_connected', { attempt });
+      return driver;
+    } catch (err) {
+      if (attempt >= 30) throw err;
+      log('neo4j_retry', { attempt });
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+}
+
+const driver = await connectWithRetry();
+const pipeline = new DiagnosisPipeline();
+
+// Best-effort at startup; repeated per /diagnose because the sensor may not
+// have written the Function nodes yet when the responder first boots.
+await ensureRunbookSubstrate(driver).catch((err) => log('runbook_seed_error', { error: String(err) }));
+
+const app = Fastify();
+
+app.get('/connection', async () => {
+  // Proof the pipeline runs on RocketRide Cloud: connect (if not yet) and
+  // return the live connection info — uri must be the cloud host.
+  try {
+    await pipeline.ensureConnected();
+  } catch (err) {
+    return { ...pipeline.connectionInfo(), error: String(err) };
+  }
+  return pipeline.connectionInfo();
+});
+
+// The M3 flow: incident from the sensor → runbook retrieval → context →
+// Cloud pipeline. Shared by /diagnose (M3) and /remediate (M4).
+async function runDiagnosis(candidates = 1): Promise<
+  { status: 'ok' } | { status: 'incident'; incident: Incident; diagnosis: Diagnosis }
+> {
+  const res = await fetch(`${SENSOR_URL}/incident`);
+  if (!res.ok) throw new Error(`sensor /incident returned ${res.status}`);
+  const incident = (await res.json()) as Incident;
+  if (incident.status === 'ok') return { status: 'ok' };
+
+  log('diagnose_start', { root_cause: incident.root_cause, failing_tests: incident.failing_tests });
+
+  let runbooks = null;
+  if (incident.root_cause) {
+    await ensureRunbookSubstrate(driver);
+    const file = await functionFile(driver, incident.root_cause);
+    const query = `Function ${incident.root_cause} (${file ?? 'unknown file'}) was changed in a recent commit and these tests now fail: ${incident.failing_tests.join(', ')}. Downstream affected: ${incident.blast_radius.join(', ')}.`;
+    runbooks = await retrieveRunbooks(driver, query, incident.root_cause);
+    if (runbooks) log('runbooks_retrieved', { hits: runbooks.map((r) => ({ title: r.title, applies: r.applies, score: r.score })) });
+    else log('runbooks_flagged', { reason: 'Nebius not configured — diagnosing without runbooks' });
+  }
+
+  let context = await assembleContext(driver, TARGET_DIR, incident, runbooks);
+  if (candidates > 1) {
+    context += `\n## Candidates requested\nReturn ${candidates} candidate variants in candidate_fixes.`;
+  }
+  log('context_assembled', { chars: context.length });
+  const diagnosis = await pipeline.diagnose(context);
+  log('diagnose_done', { severity: diagnosis.severity, cited_runbook: diagnosis.cited_runbook });
+
+  return { status: 'incident', incident, diagnosis };
+}
+
+// M5: Butterbase persistence is keyed to the signed-in user's JWT. When the
+// app is configured a token is required; without config (pre-M5 dev) the
+// engine still runs, it just doesn't persist.
+function requireToken(request: { headers: Record<string, unknown> }, reply: { code: (n: number) => unknown }): string | null {
+  const token = bearerToken(request.headers.authorization as string | undefined);
+  if (butterbaseConfigured() && !token) {
+    reply.code(401);
+    return null;
+  }
+  return token;
+}
+
+app.post('/diagnose', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (butterbaseConfigured() && !token) return { error: 'sign in first — Bearer token required' };
+
+  const out = await runDiagnosis();
+  if (out.status === 'incident' && token) {
+    const rows = await recordIncidentAction(token, out.incident, out.diagnosis, { type: 'diagnose' });
+    return { ...out, ...rows };
+  }
+  return out;
+});
+
+// The M6 ship path: spend a credit → real GitHub PR → resolve + MTTR.
+// Paywall first: no credits → no PR. Shared by /apply (auto path) and
+// /approvals/:id (approved path).
+async function shipVerifiedFix(
+  token: string,
+  pending: { action: ActionRow; incident: StoredIncidentRow },
+): Promise<{ pr_url: string; branch: string; mttr_seconds: number }> {
+  await spendCredit(token);
+
+  const res = await fetch(`${SENSOR_URL}/incident`);
+  const live = res.ok ? ((await res.json()) as Incident) : null;
+  const { pr_url, branch } = await openFixPr(pending.action.candidate_fix!, {
+    root_cause: pending.incident.root_cause,
+    failing_tests: live?.status === 'incident' ? live.failing_tests : [],
+  });
+
+  const { mttr_seconds } = await markApplied(token, pending.action, pending.incident);
+  return { pr_url, branch, mttr_seconds };
+}
+
+// M6 + M7: ship the verified fix, gated by the deterministic policy. Risky
+// fixes park as a pending approval — no PR, no credit spent — until a human
+// decides via POST /approvals/:id.
+app.post('/apply', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (!token) return { error: 'sign in first — Bearer token required' };
+
+  const pending = await latestVerifiedAction(token);
+  if (!pending) {
+    reply.code(409);
+    return { error: 'no verified, unapplied fix for an open incident — run /remediate first' };
+  }
+
+  const decision = evaluatePolicy({
+    severity: pending.incident.severity,
+    blast_radius: pending.incident.blast_radius?.functions ?? [],
+    fix_path: pending.action.candidate_fix!.path,
+  });
+  if (decision.requires_approval) {
+    const approval = await createApproval(token, pending.action.id);
+    log('apply_gated', { approval_id: approval.id, reasons: decision.reasons });
+    return { status: 'pending_approval', approval_id: approval.id, reasons: decision.reasons };
+  }
+
+  try {
+    return await shipVerifiedFix(token, pending);
+  } catch (err) {
+    if (err instanceof PaywallError) {
+      reply.code(402);
+      return { error: 'payment_required', message: err.message };
+    }
+    throw err;
+  }
+});
+
+// M7 Phase 2: decide a pending approval. approved → run the M6 ship;
+// denied → abort with no side effects (no PR, no credit).
+app.post('/approvals/:id', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (!token) return { error: 'sign in first — Bearer token required' };
+
+  const { id } = request.params as { id: string };
+  const { decision } = (request.body ?? {}) as { decision?: string };
+  if (decision !== 'approved' && decision !== 'denied') {
+    reply.code(400);
+    return { error: 'body must be { "decision": "approved" | "denied" }' };
+  }
+
+  const approval = await getApproval(token, id);
+  if (!approval) {
+    reply.code(404);
+    return { error: 'approval not found' };
+  }
+  if (approval.status !== 'pending') {
+    reply.code(409);
+    return { error: `approval already ${approval.status}` };
+  }
+
+  if (decision === 'denied') {
+    await setApprovalStatus(token, id, 'denied');
+    return { status: 'denied' };
+  }
+
+  const pending = await actionWithIncident(token, approval.action_id);
+  if (!pending?.action.candidate_fix?.path) {
+    reply.code(409);
+    return { error: 'approved action has no candidate_fix' };
+  }
+  try {
+    const shipped = await shipVerifiedFix(token, pending);
+    await setApprovalStatus(token, id, 'approved');
+    return { status: 'approved', ...shipped };
+  } catch (err) {
+    if (err instanceof PaywallError) {
+      reply.code(402);
+      return { error: 'payment_required', message: err.message };
+    }
+    throw err;
+  }
+});
+
+// M5 Phase 2: the guarded stub for the real apply (M6). Spending a credit is
+// load-bearing: free tier (0 credits) is paywalled until a subscription
+// grants credits.
+app.post('/apply-stub', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (!token) return { error: 'sign in first — Bearer token required' };
+  try {
+    const { remaining } = await spendCredit(token);
+    return { applied: 'stub', credits_remaining: remaining };
+  } catch (err) {
+    if (err instanceof PaywallError) {
+      reply.code(402);
+      return { error: 'payment_required', message: err.message };
+    }
+    throw err;
+  }
+});
+
+// M4: diagnosis + candidate fix, proven against the real test suite in a
+// Daytona sandbox.
+//   default            → single pipeline candidate, fresh sandbox   (Phase 1)
+//   {candidate_fix}    → caller-supplied candidate, same loop — the reject check
+//   {candidates: N}    → pipeline generates N variants, verified in parallel
+//                        from the pre-installed snapshot            (Phase 2)
+//   {candidate_fixes}  → caller-supplied variants through the parallel loop
+app.post('/remediate', async (request, reply) => {
+  const token = requireToken(request, reply);
+  if (butterbaseConfigured() && !token) return { error: 'sign in first — Bearer token required' };
+
+  const body = (request.body ?? null) as {
+    candidate_fix?: CandidateFix;
+    candidate_fixes?: CandidateFix[];
+    candidates?: number;
+  } | null;
+
+  const isFix = (f: CandidateFix | undefined): f is CandidateFix =>
+    Boolean(f?.path) && typeof f?.content === 'string';
+
+  let diagnosis: Diagnosis | undefined;
+  let candidates: CandidateFix[];
+
+  if (body?.candidate_fixes?.length && body.candidate_fixes.every(isFix)) {
+    candidates = body.candidate_fixes;
+    log('remediate_override', { paths: candidates.map((c) => c.path) });
+  } else if (isFix(body?.candidate_fix)) {
+    candidates = [body!.candidate_fix!];
+    log('remediate_override', { path: candidates[0].path });
+  } else {
+    const n = Math.min(Math.max(Number(body?.candidates) || 1, 1), 5);
+    const out = await runDiagnosis(n);
+    if (out.status === 'ok') return { status: 'ok' };
+    diagnosis = out.diagnosis;
+    candidates = (n > 1 && diagnosis.candidate_fixes?.every(isFix) ? diagnosis.candidate_fixes : [diagnosis.candidate_fix])
+      .filter(isFix);
+    if (!candidates.length) {
+      reply.code(502);
+      return { error: 'pipeline returned no candidate_fix' };
+    }
+  }
+
+  // Persist the remediation attempt for the signed-in user (M5).
+  async function persistRemediate(verified: boolean, fix: CandidateFix | null) {
+    if (!token) return {};
+    const res = await fetch(`${SENSOR_URL}/incident`);
+    if (!res.ok) return {};
+    const incident = (await res.json()) as Incident;
+    if (incident.status === 'ok') return {};
+    return recordIncidentAction(
+      token,
+      incident,
+      diagnosis ?? { severity: 'high', root_cause_explanation: '', proposed_fix_approach: '', cited_runbook: null },
+      { type: 'remediate', candidate_fix: fix, verified },
+    ).catch((err) => {
+      log('butterbase_persist_failed', { error: String(err) });
+      return {};
+    });
+  }
+
+  log('remediate_verify_start', { count: candidates.length });
+  if (candidates.length === 1) {
+    const { verified, test_output } = await verifyCandidate(TARGET_DIR, candidates[0]);
+    log('remediate_done', { verified });
+    const rows = await persistRemediate(verified, candidates[0]);
+    return { verified, candidate_fix: candidates[0], test_output, ...(diagnosis ? { diagnosis } : {}), ...rows };
+  }
+
+  const { selected, results } = await verifyCandidatesParallel(TARGET_DIR, candidates);
+  log('remediate_done', { verified: selected !== null, selected });
+  const rows = await persistRemediate(selected !== null, selected !== null ? candidates[selected] : null);
+  return {
+    verified: selected !== null,
+    candidate_fix: selected !== null ? candidates[selected] : null,
+    test_output: selected !== null ? results[selected].test_output : results.map((r) => r.test_output).join('\n---\n'),
+    selected,
+    results: results.map(({ candidate_index, verified }) => ({ candidate_index, verified })),
+    ...(diagnosis ? { diagnosis } : {}),
+    ...rows,
+  };
+});
+
+app.setErrorHandler((error, _request, reply) => {
+  log('request_error', { error: String(error) });
+  reply.code(500).send({ error: String(error) });
+});
+
+await app.listen({ port: PORT, host: '0.0.0.0' });
+log('listening', { port: PORT });

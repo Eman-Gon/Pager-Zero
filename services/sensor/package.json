@@ -1,0 +1,15 @@
+{
+  "name": "sensor",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "neo4j-driver": "^5.28.0",
+    "ts-morph": "^24.0.0",
+    "tsx": "^4.19.0"
+  }
+}
