@@ -43,7 +43,7 @@ export default function TracePanel({
           setDone(true);
         }
       })
-      .catch(() => {});
+      .catch((err) => console.warn('trace restore failed', err));
     return () => {
       alive = false;
     };

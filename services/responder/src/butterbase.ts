@@ -1,5 +1,3 @@
-import { readFile } from 'node:fs/promises';
-import path from 'node:path';
 import { createClient, type ButterbaseClient } from '@butterbase/sdk';
 import { log } from './log.js';
 import type { CandidateFix, Diagnosis } from './pipeline.js';
@@ -258,31 +256,12 @@ export interface StoredIncidentRow {
   blast_radius: { functions?: string[] } | null;
 }
 
-// Latest diagnose (or remediate) candidate for /remediate without re-running RocketRide.
-async function materializeCandidate(
-  payload: StoredActionPayload,
-  incident: StoredIncidentRow,
-): Promise<CandidateFix | null> {
-  const filePath =
-    payload.path ||
-    (incident.root_cause === 'computeTax' ? 'src/tax.ts' : '');
-  if (!filePath) return null;
-
-  let content = payload.content?.trim() ? payload.content : '';
-  const targetDir = process.env.TARGET_DIR ?? '';
-  if (!content && targetDir) {
-    try {
-      content = await readFile(path.join(targetDir, filePath), 'utf8');
-      const approach = payload.trace?.proposed_fix_approach ?? '';
-      if (/multiplic/i.test(approach) && content.includes('amount + rate')) {
-        content = content.replace('amount + rate', 'amount * rate');
-      }
-    } catch {
-      return null;
-    }
-  }
-  if (!content.trim()) return null;
-  return { path: filePath, content };
+// Latest diagnose (or remediate) candidate for /remediate without re-running
+// RocketRide. Only a real stored candidate counts — no path or content is ever
+// synthesized here; a cache miss makes /remediate re-run the pipeline.
+function materializeCandidate(payload: StoredActionPayload): CandidateFix | null {
+  if (!payload.path || !payload.content?.trim()) return null;
+  return { path: payload.path, content: payload.content };
 }
 
 export async function latestDiagnoseCandidate(
@@ -314,7 +293,7 @@ export async function latestDiagnoseCandidate(
       if (type === 'remediate' && !row.verified) continue;
       const payload = row.candidate_fix;
       if (!payload) continue;
-      const candidate = await materializeCandidate(payload, incident);
+      const candidate = materializeCandidate(payload);
       if (!candidate) continue;
       const diagnosis: Diagnosis =
         type === 'diagnose' && payload.trace

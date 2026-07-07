@@ -154,6 +154,44 @@ compose as the offline/local path in README (or bring env to parity) — flag, d
 
 ---
 
+## Fix status (Phase 3, 2026-07-07 evening — tsc clean on all packages after fixes)
+
+| Item | Status |
+| --- | --- |
+| B1 rigged `materializeCandidate` | **Fixed** — synthesis removed; only real stored candidates are served; cache miss re-runs the pipeline |
+| B2 `UNLIMITED_CREDITS=1` template default | **Fixed** — `.env.example` now `0` with a warning comment |
+| B3 `.env.example` missing required vars | **Fixed** — NEO4J_*/GITHUB_*/BUTTERBASE_APP_ID/API_URL/PLAN_CREDITS + optional overrides documented |
+| L1 mid-migration config incoherence | **Flagged-for-human** — HUMANS.md §3.4 (decide patient, update scripts, re-run e2e) |
+| L2 orphan-path verify rubber-stamp | **Fixed** — `verify.ts` rejects (verified:false) any candidate whose path doesn't exist in the patient, single + parallel paths |
+| M-1 Aura creds in local build | **Flagged-for-human** — HUMANS.md §3.3 (rebuild deploys with VITE_NEO4J_* blank); template now warns |
+| M-2 committed demo password | **Fixed in repo** (removed from `.env.example`, `frontend/.env.example`, `dev-native.sh` literal, `autonomous.ts` default + fail-fast) / **Flagged** rotation after event (HUMANS.md §3.2) |
+| M-3 synthetic balance on write failure | **Flagged** — fallback kept deliberately so the demo never hard-stops; writes persist since the accounts.id fix; revisit post-event |
+| M-4 /incident "ok" before first scan | **Fixed** — `unscanned` status + `scanned_head`/`last_scan_at`/`last_scan_error` in the payload |
+| M-5 non-deterministic multi-root-cause | **Flagged** — design change (return all candidates), out of demo scope |
+| M-6 static-deploy 404s | **Partially fixed** — both vars documented with warnings in `frontend/.env.example`; visible-banner idea flagged |
+| M-7 claimflow repo/scripts | **Superseded** — claimflow is now its own git repo w/ `good` tag (done by parallel session); remaining coherence work is L1 |
+| M-8 docker-compose divergence | **Flagged** — parallel session is actively reworking the Docker path; not double-editing |
+| m-1 skipped→failing mapping | **Fixed** (only `failed` marks failing) |
+| m-2 `devpassword` defaults | **Flagged** — compose local flow relies on it; removing breaks `docker compose up` |
+| m-3 hardcoded `good` ref | **Fixed** (`BASELINE_REF` env, default `good`) |
+| m-4 swallowed pipe-load error | **Fixed** (logged before legacy fallback) |
+| m-5 committed probe script | **Kept deliberately** — referenced by e2e.sh's failure hint |
+| m-6 cosmetic timer animation | **Flagged** — cosmetic; final results are backend-gated |
+| m-7 silent restore catches | **Fixed** (TracePanel + SandboxPanel now console.warn; GraphPanel's swallow already surfaces a labeled fallback; auth.ts catches are session-restore, justified) |
+| m-8 dead `react-force-graph-2d` dep | **Fixed** (removed from package.json) |
+| m-9 dead `selected` field | **Flagged** — trivial, file contested by parallel session |
+| m-10 stale committed dist/index.html | **Flagged** — parallel session is building a Docker/nginx deploy that may want dist tracked; not untracking under them |
+| m-11 tracked tsbuildinfo/__pycache__ | **Fixed** (untracked + gitignored) |
+| m-12 phase0 lockfiles vs own .gitignore | **Flagged** — harmless inconsistency |
+| m-14 .env mutation before trap | **Fixed** (trap installed first) |
+| m-16 dead scaffolding dirs | **Fixed** (gateway/orders/payments deleted — untracked node_modules only) |
+| m-17 app id default in api.ts | **Flagged** — file contested by parallel session; public-ish identifier, low risk |
+| m-18/m-19 env docs / no linter | m-18 **Fixed** in template; m-19 **Flagged** (out of demo scope) |
+
+Verification after fixes: `tsc --noEmit` clean on sensor, responder, frontend. Live-flow re-verification
+is BLOCKED on the L1 patient decision (running e2e against the half-migrated config proves nothing) —
+that re-run is the demo-day gate (HUMANS.md §3.4, READINESS.md preflight).
+
 ## Live Integration (Phase 1, 2026-07-07 evening)
 
 **Environment caveat:** the stack was actively reconfigured by a parallel session DURING this phase —

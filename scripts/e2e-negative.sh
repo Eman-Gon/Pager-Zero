@@ -129,11 +129,13 @@ ok "policy: protected path gated, blast radius gated, safe fix auto ($(echo "$po
 
 # --- D. Paywall: 0 credits → 402, no PR -------------------------------------------
 section "D. paywall — 0-credit user is blocked at ship"
-perl -i -pe 's/^DEMO_AUTO_CREDITS=1$/DEMO_AUTO_CREDITS=0/' "$ROOT/.env"
+# Install the restore trap BEFORE mutating .env, so a crash mid-toggle can't
+# strand the file with DEMO_AUTO_CREDITS=0.
 restore_env() {
   perl -i -pe 's/^DEMO_AUTO_CREDITS=0$/DEMO_AUTO_CREDITS=1/' "$ROOT/.env"
 }
 trap restore_env EXIT
+perl -i -pe 's/^DEMO_AUTO_CREDITS=1$/DEMO_AUTO_CREDITS=0/' "$ROOT/.env"
 
 restart_stack() {
   "$ROOT/scripts/dev-native.sh" stop >/dev/null 2>&1 || true
