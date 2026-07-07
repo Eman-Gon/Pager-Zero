@@ -76,8 +76,8 @@ export default function TracePanel({
   return (
     <div className="panel-stack">
       <div className="row panel-actions">
-        <button disabled={busy || incident?.status !== 'incident'} onClick={run}>
-          {busy ? 'Diagnosing…' : 'Diagnose'}
+        <button disabled={busy} onClick={run}>
+          {busy ? 'Diagnosing…' : incident?.status === 'incident' ? 'Diagnose' : 'Diagnose repo'}
         </button>
         {restored && result && !busy && <ResultBadge kind="info">restored from Butterbase</ResultBadge>}
         {done && result && !busy && <ResultBadge kind="ok">diagnosis complete</ResultBadge>}

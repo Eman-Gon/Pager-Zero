@@ -45,9 +45,9 @@ export const STEPS: WizardStep[] = [
   {
     id: 'ship',
     label: 'Ship',
-    tool: 'Opsera · GitHub',
+    tool: 'GitHub',
     title: 'Approve & ship',
-    blurb: 'Opsera policy gates risky fixes for human approval. Once cleared, a real GitHub PR opens and Time-to-Restore is recorded.',
+    blurb: 'High-risk fixes wait for human approval. Once cleared, a real GitHub PR opens and Time-to-Restore is recorded.',
   },
 ];
 

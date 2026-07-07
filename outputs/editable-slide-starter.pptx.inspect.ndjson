@@ -1,0 +1,148 @@
+{"kind":"deck","id":"pr/0i8bud","name":"Deck"}
+{"kind":"layout","layoutId":"1416e134-c928-4a0d-a2b3-03965b5aae42","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"5e24fee3-fa8c-4639-a05d-e4e374ea343b","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/cly58h","slide":1,"title":"EDITABLE STARTER DECK","textShapes":9}
+{"kind":"textbox","id":"sh/l87ed8ba","slide":1,"text":"EDITABLE STARTER DECK","textPreview":"EDITABLE STARTER DECK","textChars":21,"textLines":1,"bbox":[72,62,340,28]}
+{"kind":"textbox","id":"sh/ahoza1gv","slide":1,"text":"Your Presentation Title","textPreview":"Your Presentation Title","textChars":23,"textLines":1,"bbox":[72,154,650,154]}
+{"kind":"textbox","id":"sh/32lszqtc","slide":1,"text":"Use this line for the audience, class, project, or event.","textPreview":"Use this line for the audience, class, project, or event.","textChars":57,"textLines":1,"bbox":[76,330,590,54]}
+{"kind":"shape","id":"sh/szqtcj6t","slide":1,"bbox":[76,426,126,38]}
+{"kind":"textbox","id":"sh/lkjm1cfa","slide":1,"text":"Topic","textPreview":"Topic","textChars":5,"textLines":1,"bbox":[76,435,126,20]}
+{"kind":"shape","id":"sh/at47y1kr","slide":1,"bbox":[228,426,126,38]}
+{"kind":"textbox","id":"sh/3ex0nuxc","slide":1,"text":"Date","textPreview":"Date","textChars":4,"textLines":1,"bbox":[228,435,126,20]}
+{"kind":"shape","id":"sh/w3m94fu1","slide":1,"bbox":[380,426,126,38]}
+{"kind":"textbox","id":"sh/loj2t83i","slide":1,"text":"Presenter","textPreview":"Presenter","textChars":9,"textLines":1,"bbox":[380,435,126,20]}
+{"kind":"shape","id":"sh/9knih4by","slide":1,"bbox":[774,102,330,330]}
+{"kind":"shape","id":"sh/kzupwb2h","slide":1,"bbox":[956,260,182,182]}
+{"kind":"shape","id":"sh/re1w7mp0","slide":1,"bbox":[818,386,272,118]}
+{"kind":"textbox","id":"sh/2t83itgf","slide":1,"text":"Big idea","textPreview":"Big idea","textChars":8,"textLines":1,"bbox":[848,410,210,30]}
+{"kind":"textbox","id":"sh/9w3m94fu","slide":1,"text":"Replace this with the central message.","textPreview":"Replace this with the central message.","textChars":38,"textLines":1,"bbox":[850,452,206,42]}
+{"kind":"textbox","id":"sh/kb6xkf6d","slide":1,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[1162,652,46,22]}
+{"kind":"shape","id":"sh/rqd4vmtw","slide":1,"bbox":[72,663,1052,1]}
+{"kind":"notes","id":"nt/cly58h","slide":1,"text":""}
+{"kind":"slide","id":"sl/3jx2yb","slide":2,"title":"AGENDA","textShapes":16}
+{"kind":"textbox","id":"sh/2x4nap4r","slide":2,"text":"AGENDA","textPreview":"AGENDA","textChars":6,"textLines":1,"bbox":[72,54,360,24]}
+{"kind":"textbox","id":"sh/donyd0z6","slide":2,"text":"A simple flow for a clear story","textPreview":"A simple flow for a clear story","textChars":31,"textLines":1,"bbox":[72,88,760,110]}
+{"kind":"textbox","id":"sh/k3q5o7qp","slide":2,"text":"Use these sections as the spine of the presentation.","textPreview":"Use these sections as the spine of the presentation.","textChars":52,"textLines":1,"bbox":[74,190,700,44]}
+{"kind":"textbox","id":"sh/val87ed8","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1162,652,46,22]}
+{"kind":"shape","id":"sh/6psfil0r","slide":2,"bbox":[72,663,1052,1]}
+{"kind":"textbox","id":"sh/dcbulwva","slide":2,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[92,266,62,38]}
+{"kind":"shape","id":"sh/kre1w7mp","slide":2,"bbox":[178,262,828,58]}
+{"kind":"textbox","id":"sh/v6psfil0","slide":2,"text":"Context","textPreview":"Context","textChars":7,"textLines":1,"bbox":[208,275,210,28]}
+{"kind":"textbox","id":"sh/2lszqtcj","slide":2,"text":"What the audience needs to know first.","textPreview":"What the audience needs to know first.","textChars":38,"textLines":1,"bbox":[430,278,520,24]}
+{"kind":"textbox","id":"sh/szqtcj6t","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[92,348,62,38]}
+{"kind":"shape","id":"sh/lkjm1cfa","slide":2,"bbox":[178,344,828,58]}
+{"kind":"textbox","id":"sh/at47y1kr","slide":2,"text":"Challenge","textPreview":"Challenge","textChars":9,"textLines":1,"bbox":[208,357,210,28]}
+{"kind":"textbox","id":"sh/3ex0nuxc","slide":2,"text":"The problem, gap, or opportunity.","textPreview":"The problem, gap, or opportunity.","textChars":33,"textLines":1,"bbox":[430,360,520,24]}
+{"kind":"textbox","id":"sh/sneloj2t","slide":2,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[92,430,62,38]}
+{"kind":"shape","id":"sh/l87ed8ba","slide":2,"bbox":[178,426,828,58]}
+{"kind":"textbox","id":"sh/ahoza1gv","slide":2,"text":"Approach","textPreview":"Approach","textChars":8,"textLines":1,"bbox":[208,439,210,28]}
+{"kind":"textbox","id":"sh/32lszqtc","slide":2,"text":"The plan, framework, or recommendation.","textPreview":"The plan, framework, or recommendation.","textChars":39,"textLines":1,"bbox":[430,442,520,24]}
+{"kind":"textbox","id":"sh/wb2hwfyx","slide":2,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[92,512,62,38]}
+{"kind":"shape","id":"sh/lwval87e","slide":2,"bbox":[178,508,828,58]}
+{"kind":"textbox","id":"sh/pkzupwb2","slide":2,"text":"Next steps","textPreview":"Next steps","textChars":10,"textLines":1,"bbox":[208,521,210,28]}
+{"kind":"textbox","id":"sh/0z61032l","slide":2,"text":"What should happen after the discussion.","textPreview":"What should happen after the discussion.","textChars":40,"textLines":1,"bbox":[430,524,520,24]}
+{"kind":"shape","id":"sh/7ed8bat4","slide":2,"bbox":[1050,256,78,304]}
+{"kind":"shape","id":"sh/itgfmlkj","slide":2,"bbox":[1071,282,36,36]}
+{"kind":"shape","id":"sh/p8nqxs72","slide":2,"bbox":[1071,372,36,36]}
+{"kind":"shape","id":"sh/0nuxc3yl","slide":2,"bbox":[1071,462,36,36]}
+{"kind":"notes","id":"nt/3jx2yb","slide":2,"text":""}
+{"kind":"slide","id":"sl/prhwgv","slide":3,"title":"CHALLENGE","textShapes":11}
+{"kind":"textbox","id":"sh/kb6xkf6d","slide":3,"text":"CHALLENGE","textPreview":"CHALLENGE","textChars":9,"textLines":1,"bbox":[72,54,360,24]}
+{"kind":"textbox","id":"sh/rqd4vmtw","slide":3,"text":"Name the problem before proposing the answer","textPreview":"Name the problem before proposing the answer","textChars":44,"textLines":1,"bbox":[72,88,760,110]}
+{"kind":"textbox","id":"sh/25kb6xkf","slide":3,"text":"Replace each card with the key barrier your audience should understand.","textPreview":"Replace each card with the key barrier your audience should understand.","textChars":71,"textLines":1,"bbox":[74,190,700,44]}
+{"kind":"textbox","id":"sh/9knih4by","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1162,652,46,22]}
+{"kind":"shape","id":"sh/kzupwb2h","slide":3,"bbox":[72,663,1052,1]}
+{"kind":"shape","id":"sh/re1w7mp0","slide":3,"bbox":[72,270,286,194]}
+{"kind":"shape","id":"sh/2t83itgf","slide":3,"bbox":[96,294,42,42]}
+{"kind":"textbox","id":"sh/9gr2p8nq","slide":3,"text":"Current state","textPreview":"Current state","textChars":13,"textLines":1,"bbox":[96,358,230,30]}
+{"kind":"textbox","id":"sh/gvy90je9","slide":3,"text":"What is happening now?","textPreview":"What is happening now?","textChars":22,"textLines":1,"bbox":[96,402,230,48]}
+{"kind":"shape","id":"sh/yd0z6103","slide":3,"bbox":[398,270,286,194]}
+{"kind":"shape","id":"sh/rytsvu9k","slide":3,"bbox":[422,294,42,42]}
+{"kind":"textbox","id":"sh/gfmlkjm1","slide":3,"text":"Friction","textPreview":"Friction","textChars":8,"textLines":1,"bbox":[422,358,230,30]}
+{"kind":"textbox","id":"sh/90je9cvi","slide":3,"text":"Where are people losing time, money, or clarity?","textPreview":"Where are people losing time, money, or clarity?","textChars":48,"textLines":1,"bbox":[422,402,230,48]}
+{"kind":"shape","id":"sh/y1kre1w7","slide":3,"bbox":[724,270,286,194]}
+{"kind":"shape","id":"sh/rmhk3q5o","slide":3,"bbox":[748,294,42,42]}
+{"kind":"textbox","id":"sh/g7adsji5","slide":3,"text":"Impact","textPreview":"Impact","textChars":6,"textLines":1,"bbox":[748,358,230,30]}
+{"kind":"textbox","id":"sh/9s36hcrm","slide":3,"text":"Why does solving this matter?","textPreview":"Why does solving this matter?","textChars":29,"textLines":1,"bbox":[748,402,230,48]}
+{"kind":"shape","id":"sh/yxobm58z","slide":3,"bbox":[72,514,938,72]}
+{"kind":"textbox","id":"sh/nih4byhg","slide":3,"text":"Takeaway: write the one sentence your audience should remember.","textPreview":"Takeaway: write the one sentence your audience should remember.","textChars":63,"textLines":1,"bbox":[104,536,852,32]}
+{"kind":"notes","id":"nt/prhwgv","slide":3,"text":""}
+{"kind":"slide","id":"sl/h6ch3p","slide":4,"title":"APPROACH","textShapes":15}
+{"kind":"textbox","id":"sh/oj2t83it","slide":4,"text":"APPROACH","textPreview":"APPROACH","textChars":8,"textLines":1,"bbox":[72,54,360,24]}
+{"kind":"textbox","id":"sh/vy90je9c","slide":4,"text":"Three pillars keep the recommendation focused","textPreview":"Three pillars keep the recommendation focused","textChars":45,"textLines":1,"bbox":[72,88,760,110]}
+{"kind":"textbox","id":"sh/6dcbulwv","slide":4,"text":"Use this slide to turn the answer into a practical framework.","textPreview":"Use this slide to turn the answer into a practical framework.","textChars":61,"textLines":1,"bbox":[74,190,700,44]}
+{"kind":"textbox","id":"sh/dsji5sne","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1162,652,46,22]}
+{"kind":"shape","id":"sh/o7qpg3ex","slide":4,"bbox":[72,663,1052,1]}
+{"kind":"shape","id":"sh/vmtwra5g","slide":4,"bbox":[146,354,882,4]}
+{"kind":"shape","id":"sh/61032lsz","slide":4,"bbox":[206,298,112,112]}
+{"kind":"textbox","id":"sh/dg7adsji","slide":4,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[206,322,112,58]}
+{"kind":"textbox","id":"sh/ovahoza1","slide":4,"text":"Prioritize","textPreview":"Prioritize","textChars":10,"textLines":1,"bbox":[122,446,280,32]}
+{"kind":"textbox","id":"sh/mtwra5gb","slide":4,"text":"Decide what matters most.","textPreview":"Decide what matters most.","textChars":25,"textLines":1,"bbox":[140,488,244,48]}
+{"kind":"shape","id":"sh/fepkzupw","slide":4,"bbox":[548,298,112,112]}
+{"kind":"textbox","id":"sh/4zidonyd","slide":4,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[548,322,112,58]}
+{"kind":"textbox","id":"sh/xkf6dcbu","slide":4,"text":"Build","textPreview":"Build","textChars":5,"textLines":1,"bbox":[464,446,280,32]}
+{"kind":"textbox","id":"sh/mlkjm1cf","slide":4,"text":"Create the smallest useful version.","textPreview":"Create the smallest useful version.","textChars":35,"textLines":1,"bbox":[482,488,244,48]}
+{"kind":"shape","id":"sh/f6dcbulw","slide":4,"bbox":[890,298,112,112]}
+{"kind":"textbox","id":"sh/4r65wjud","slide":4,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[890,322,112,58]}
+{"kind":"textbox","id":"sh/xc3ylc7u","slide":4,"text":"Measure","textPreview":"Measure","textChars":7,"textLines":1,"bbox":[806,446,280,32]}
+{"kind":"textbox","id":"sh/m94fu18j","slide":4,"text":"Learn what to improve next.","textPreview":"Learn what to improve next.","textChars":27,"textLines":1,"bbox":[824,488,244,48]}
+{"kind":"shape","id":"sh/fu18jqh0","slide":4,"bbox":[896,116,246,96]}
+{"kind":"textbox","id":"sh/7qpg3ex0","slide":4,"text":"Edit tip","textPreview":"Edit tip","textChars":8,"textLines":1,"bbox":[922,136,190,24]}
+{"kind":"textbox","id":"sh/i5sneloj","slide":4,"text":"Make each pillar a verb so the story stays action-oriented.","textPreview":"Make each pillar a verb so the story stays action-oriented.","textChars":59,"textLines":1,"bbox":[922,164,190,36]}
+{"kind":"notes","id":"nt/h6ch3p","slide":4,"text":""}
+{"kind":"slide","id":"sl/2efg82","slide":5,"title":"ROADMAP","textShapes":21}
+{"kind":"textbox","id":"sh/6psfil0r","slide":5,"text":"ROADMAP","textPreview":"ROADMAP","textChars":7,"textLines":1,"bbox":[72,54,360,24]}
+{"kind":"textbox","id":"sh/dcbulwva","slide":5,"text":"Show how the work moves from idea to outcome","textPreview":"Show how the work moves from idea to outcome","textChars":44,"textLines":1,"bbox":[72,88,760,110]}
+{"kind":"textbox","id":"sh/kre1w7mp","slide":5,"text":"Adjust the phases, owners, and timing to fit your real plan.","textPreview":"Adjust the phases, owners, and timing to fit your real plan.","textChars":60,"textLines":1,"bbox":[74,190,700,44]}
+{"kind":"textbox","id":"sh/vixczed8","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1162,652,46,22]}
+{"kind":"shape","id":"sh/2x4nap4r","slide":5,"bbox":[72,663,1052,1]}
+{"kind":"shape","id":"sh/donyd0z6","slide":5,"bbox":[120,380,960,6]}
+{"kind":"shape","id":"sh/k3q5o7qp","slide":5,"bbox":[116,344,78,78]}
+{"kind":"textbox","id":"sh/vu9knih4","slide":5,"text":"1","textPreview":"1","textChars":1,"textLines":1,"bbox":[116,361,78,38]}
+{"kind":"textbox","id":"sh/29gr2p8n","slide":5,"text":"Phase 1","textPreview":"Phase 1","textChars":7,"textLines":1,"bbox":[88,260,132,22]}
+{"kind":"textbox","id":"sh/kre1w7mp","slide":5,"text":"Discover","textPreview":"Discover","textChars":8,"textLines":1,"bbox":[72,286,164,30]}
+{"kind":"textbox","id":"sh/dcbulwva","slide":5,"text":"Gather inputs","textPreview":"Gather inputs","textChars":13,"textLines":1,"bbox":[68,456,174,28]}
+{"kind":"shape","id":"sh/6psfil0r","slide":5,"bbox":[366,344,78,78]}
+{"kind":"textbox","id":"sh/val87ed8","slide":5,"text":"2","textPreview":"2","textChars":1,"textLines":1,"bbox":[366,361,78,38]}
+{"kind":"textbox","id":"sh/k3q5o7qp","slide":5,"text":"Phase 2","textPreview":"Phase 2","textChars":7,"textLines":1,"bbox":[338,260,132,22]}
+{"kind":"textbox","id":"sh/donyd0z6","slide":5,"text":"Design","textPreview":"Design","textChars":6,"textLines":1,"bbox":[322,286,164,30]}
+{"kind":"textbox","id":"sh/2x4nap4r","slide":5,"text":"Shape options","textPreview":"Shape options","textChars":13,"textLines":1,"bbox":[318,456,174,28]}
+{"kind":"shape","id":"sh/vixczed8","slide":5,"bbox":[616,344,78,78]}
+{"kind":"textbox","id":"sh/kf6dcbul","slide":5,"text":"3","textPreview":"3","textChars":1,"textLines":1,"bbox":[616,361,78,38]}
+{"kind":"textbox","id":"sh/d0z61032","slide":5,"text":"Phase 3","textPreview":"Phase 3","textChars":7,"textLines":1,"bbox":[588,260,132,22]}
+{"kind":"textbox","id":"sh/dsji5sne","slide":5,"text":"Deliver","textPreview":"Deliver","textChars":7,"textLines":1,"bbox":[572,286,164,30]}
+{"kind":"textbox","id":"sh/o7qpg3ex","slide":5,"text":"Launch work","textPreview":"Launch work","textChars":11,"textLines":1,"bbox":[568,456,174,28]}
+{"kind":"shape","id":"sh/vmtwra5g","slide":5,"bbox":[866,344,78,78]}
+{"kind":"textbox","id":"sh/61032lsz","slide":5,"text":"4","textPreview":"4","textChars":1,"textLines":1,"bbox":[866,361,78,38]}
+{"kind":"textbox","id":"sh/d4vmtwra","slide":5,"text":"Phase 4","textPreview":"Phase 4","textChars":7,"textLines":1,"bbox":[838,260,132,22]}
+{"kind":"textbox","id":"sh/oj2t83it","slide":5,"text":"Improve","textPreview":"Improve","textChars":7,"textLines":1,"bbox":[822,286,164,30]}
+{"kind":"textbox","id":"sh/vy90je9c","slide":5,"text":"Review results","textPreview":"Review results","textChars":14,"textLines":1,"bbox":[818,456,174,28]}
+{"kind":"shape","id":"sh/6dcbulwv","slide":5,"bbox":[884,514,244,62]}
+{"kind":"textbox","id":"sh/d8v6psfi","slide":5,"text":"Timeline placeholder","textPreview":"Timeline placeholder","textChars":20,"textLines":1,"bbox":[910,536,190,20]}
+{"kind":"notes","id":"nt/2efg82","slide":5,"text":""}
+{"kind":"slide","id":"sl/acbre4","slide":6,"title":"NEXT STEPS","textShapes":18}
+{"kind":"textbox","id":"sh/hk3q5o7q","slide":6,"text":"NEXT STEPS","textPreview":"NEXT STEPS","textChars":10,"textLines":1,"bbox":[72,54,360,24]}
+{"kind":"textbox","id":"sh/6xkf6dcb","slide":6,"text":"End with decisions, owners, and momentum","textPreview":"End with decisions, owners, and momentum","textChars":40,"textLines":1,"bbox":[72,88,760,110]}
+{"kind":"textbox","id":"sh/zed8v6ps","slide":6,"text":"Replace the rows below with concrete follow-up actions.","textPreview":"Replace the rows below with concrete follow-up actions.","textChars":55,"textLines":1,"bbox":[74,190,700,44]}
+{"kind":"textbox","id":"sh/obm58z25","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1162,652,46,22]}
+{"kind":"shape","id":"sh/hwfyxobm","slide":6,"bbox":[72,663,1052,1]}
+{"kind":"textbox","id":"sh/65wjudg7","slide":6,"text":"ACTION","textPreview":"ACTION","textChars":6,"textLines":1,"bbox":[94,258,420,22]}
+{"kind":"textbox","id":"sh/zqtcj6to","slide":6,"text":"OWNER","textPreview":"OWNER","textChars":5,"textLines":1,"bbox":[604,258,170,22]}
+{"kind":"textbox","id":"sh/sfil0rqd","slide":6,"text":"DUE","textPreview":"DUE","textChars":3,"textLines":1,"bbox":[856,258,170,22]}
+{"kind":"shape","id":"sh/h0fepkzu","slide":6,"bbox":[72,292,1006,52]}
+{"kind":"textbox","id":"sh/5wjudg7a","slide":6,"text":"Confirm direction","textPreview":"Confirm direction","textChars":17,"textLines":1,"bbox":[94,307,440,22]}
+{"kind":"textbox","id":"sh/gbq1oryt","slide":6,"text":"Name","textPreview":"Name","textChars":4,"textLines":1,"bbox":[604,307,160,22]}
+{"kind":"textbox","id":"sh/nuxc3ylc","slide":6,"text":"Date","textPreview":"Date","textChars":4,"textLines":1,"bbox":[856,307,140,22]}
+{"kind":"shape","id":"sh/y90je9cv","slide":6,"bbox":[72,362,1006,52]}
+{"kind":"textbox","id":"sh/58z25kb6","slide":6,"text":"Assign responsibilities","textPreview":"Assign responsibilities","textChars":23,"textLines":1,"bbox":[94,377,440,22]}
+{"kind":"textbox","id":"sh/gn29gr2p","slide":6,"text":"Name","textPreview":"Name","textChars":4,"textLines":1,"bbox":[604,377,160,22]}
+{"kind":"textbox","id":"sh/n29gr2p8","slide":6,"text":"Date","textPreview":"Date","textChars":4,"textLines":1,"bbox":[856,377,140,22]}
+{"kind":"shape","id":"sh/yhgn29gr","slide":6,"bbox":[72,432,1006,52]}
+{"kind":"textbox","id":"sh/5kb6xkf6","slide":6,"text":"Schedule checkpoint","textPreview":"Schedule checkpoint","textChars":19,"textLines":1,"bbox":[94,447,440,22]}
+{"kind":"textbox","id":"sh/czed8v6p","slide":6,"text":"Name","textPreview":"Name","textChars":4,"textLines":1,"bbox":[604,447,160,22]}
+{"kind":"textbox","id":"sh/8bat47y1","slide":6,"text":"Date","textPreview":"Date","textChars":4,"textLines":1,"bbox":[856,447,140,22]}
+{"kind":"shape","id":"sh/1w7mp0bi","slide":6,"bbox":[72,536,540,74]}
+{"kind":"textbox","id":"sh/q5o7qpg3","slide":6,"text":"Closing line: what should the audience do or remember?","textPreview":"Closing line: what should the audience do or remember?","textChars":54,"textLines":1,"bbox":[102,555,478,48]}
+{"kind":"shape","id":"sh/jqh0fepk","slide":6,"bbox":[994,528,92,92]}
+{"kind":"textbox","id":"sh/8nqxs72x","slide":6,"text":"Thank\nyou","textPreview":"Thank | you","textChars":9,"textLines":2,"bbox":[994,548,92,48]}
+{"kind":"notes","id":"nt/acbre4","slide":6,"text":""}

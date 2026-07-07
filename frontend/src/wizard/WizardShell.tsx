@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { fetchMissionSnapshot, type Incident, type MissionSnapshot } from '../api';
 import GraphPanel from '../panels/GraphPanel';
 import TracePanel from '../panels/TracePanel';
@@ -6,7 +6,7 @@ import SandboxPanel from '../panels/SandboxPanel';
 import ApprovalPanel from '../panels/ApprovalPanel';
 import ShipPanel from '../panels/ShipPanel';
 import { ResultBadge } from '../components/ActionProgress';
-import { STEPS, firstIncompleteIndex, isStepComplete, type StepId } from './steps';
+import { STEPS, isStepComplete, type StepId } from './steps';
 
 function DetectStep({ incident }: { incident: Incident | null }) {
   if (incident?.status !== 'incident') {
@@ -78,22 +78,22 @@ export default function WizardShell({
     return () => clearInterval(h);
   }, [refresh, tick]);
 
-  const maxReachable = useMemo(() => firstIncompleteIndex(snap), [snap]);
   const step = STEPS[stepIdx];
   const currentComplete = isStepComplete(step.id, snap);
   const isLast = stepIdx === STEPS.length - 1;
 
+  // Free navigation: every step is reachable so the operator can jump around
+  // (and reach Diagnose) even before an incident is live. Completion still
+  // drives the colored state on each step, it just no longer locks the flow.
   function goTo(idx: number) {
     if (idx < 0 || idx >= STEPS.length) return;
-    if (idx > maxReachable) return;
     setStepIdx(idx);
   }
 
-  function stepState(idx: number): 'done' | 'active' | 'ready' | 'locked' {
+  function stepState(idx: number): 'done' | 'active' | 'ready' {
     if (idx === stepIdx) return 'active';
     if (isStepComplete(STEPS[idx].id, snap)) return 'done';
-    if (idx <= maxReachable) return 'ready';
-    return 'locked';
+    return 'ready';
   }
 
   // Panels notify + we refetch so the Next button unlocks promptly.
@@ -117,7 +117,7 @@ export default function WizardShell({
               <div className="result-card result-card-warn">
                 <ResultBadge kind="warn">approval required</ResultBadge>
                 <p className="muted panel-hint">
-                  Opsera flagged this fix as high-risk. Approve or deny below to resolve the gate.
+                  This fix was flagged as high-risk. Approve or deny below to resolve the gate.
                 </p>
               </div>
             )}
@@ -135,12 +135,7 @@ export default function WizardShell({
           const state = stepState(i);
           return (
             <li key={s.id} className={`wstep wstep-${state}`}>
-              <button
-                type="button"
-                className="wstep-btn"
-                disabled={i > maxReachable}
-                onClick={() => goTo(i)}
-              >
+              <button type="button" className="wstep-btn" onClick={() => goTo(i)}>
                 <span className="wstep-num">{state === 'done' ? '✓' : i + 1}</span>
                 <span className="wstep-text">
                   <span className="wstep-label">{s.label}</span>
@@ -176,13 +171,7 @@ export default function WizardShell({
             </button>
             <div className="spacer" />
             {!isLast ? (
-              <button
-                type="button"
-                className="wizard-next"
-                disabled={!currentComplete}
-                onClick={() => goTo(stepIdx + 1)}
-                title={currentComplete ? '' : 'Finish this step to continue'}
-              >
+              <button type="button" className="wizard-next" onClick={() => goTo(stepIdx + 1)}>
                 Next →
               </button>
             ) : (

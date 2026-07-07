@@ -17,6 +17,12 @@ SENSOR_LOG="$PID_DIR/sensor.log"
 RESPONDER_LOG="$PID_DIR/responder.log"
 FRONTEND_LOG="$PID_DIR/frontend.log"
 TARGET="${PATIENT_REPO:-$ROOT/target-repo}"
+# Resolve a relative PATIENT_REPO (e.g. patients/claimflow) against the repo
+# root — the services run from their own cwd and would otherwise miss it.
+case "$TARGET" in
+  /*) ;;
+  *) TARGET="$ROOT/$TARGET" ;;
+esac
 FRONTEND_ENV="$ROOT/frontend/.env.local"
 
 port_owner() {

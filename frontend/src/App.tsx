@@ -274,6 +274,11 @@ export default function App() {
         <span className={`status-pill ${incident?.status === 'incident' ? 'incident' : 'ok'}`}>
           {incident === null ? 'sensor offline' : incident.status === 'incident' ? 'INCIDENT' : 'all clear'}
         </span>
+        {incident?.status === 'incident' && (
+          <span className="topbar-incident">
+            root cause <b>{incident.root_cause}</b> · blast {incident.blast_radius.join(', ')}
+          </span>
+        )}
         <div className="spacer" />
         <div className="topbar-credits">
           <CreditsPanel token={token} tick={tick} />

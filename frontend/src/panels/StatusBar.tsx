@@ -48,7 +48,6 @@ export default function StatusBar() {
       {pill('butterbase', health.butterbase, health.butterbase ? 'persistence + auth active' : 'not configured')}
       {tools?.daytona === false && pill('daytona', false, 'not configured')}
       {tools?.github === false && pill('github', false, 'not configured')}
-      {tools?.opsera && pill('opsera', true, 'policy gate + DORA Time-to-Restore active')}
     </div>
   );
 }
