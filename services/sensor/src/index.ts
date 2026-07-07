@@ -1,16 +1,14 @@
 import Fastify from 'fastify';
 import neo4j, { type Driver } from 'neo4j-driver';
 import { analyzeTarget, writeCodeGraph } from './codegraph.js';
+import { log } from './log.js';
+import { ensureTargetDeps, gitHead, scan } from './scan.js';
 
 const NEO4J_URL = process.env.NEO4J_URL ?? 'bolt://localhost:7687';
 const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
 const NEO4J_PASSWORD = process.env.NEO4J_PASSWORD ?? 'devpassword';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
 const PORT = Number(process.env.PORT ?? 3003);
-
-function log(event: string, fields: Record<string, unknown> = {}): void {
-  console.log(JSON.stringify({ event, ...fields }));
-}
 
 async function connectWithRetry(): Promise<Driver> {
   const driver = neo4j.driver(NEO4J_URL, neo4j.auth.basic(NEO4J_USER, NEO4J_PASSWORD));
@@ -41,3 +39,21 @@ log('graph_built', {
 const app = Fastify();
 await app.listen({ port: PORT, host: '0.0.0.0' });
 log('listening', { port: PORT });
+
+await ensureTargetDeps(TARGET_DIR);
+
+let lastHead: string | null = null;
+for (;;) {
+  try {
+    const head = await gitHead(TARGET_DIR);
+    if (head !== lastHead) {
+      log('scan_start', { head });
+      await scan(driver, TARGET_DIR);
+      lastHead = head;
+      log('scan_done', { head });
+    }
+  } catch (err) {
+    log('scan_error', { error: String(err) });
+  }
+  await new Promise((r) => setTimeout(r, 2000));
+}

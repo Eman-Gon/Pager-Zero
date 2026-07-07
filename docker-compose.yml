@@ -16,6 +16,8 @@ services:
     build: ./services/sensor
     volumes:
       - ./target-repo:/target:ro
+      # hide the host's (darwin) node_modules; the sensor installs linux deps here
+      - /target/node_modules
     environment:
       NEO4J_URL: bolt://neo4j:7687
       NEO4J_USER: neo4j
