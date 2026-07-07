@@ -37,6 +37,56 @@ log('graph_built', {
 });
 
 const app = Fastify();
+
+app.get('/incident', async () => {
+  const session = driver.session();
+  try {
+    const failingTests = (
+      await session.run(`MATCH (t:Test {status:'failing'}) RETURN t.file AS file ORDER BY file`)
+    ).records.map((r) => r.get('file'));
+    const changedFunctions = (
+      await session.run(`MATCH (f:Function {changed:true}) RETURN f.name AS name ORDER BY name`)
+    ).records.map((r) => r.get('name'));
+
+    if (failingTests.length === 0) {
+      return {
+        status: 'ok',
+        failing_tests: [],
+        changed_functions: changedFunctions,
+        root_cause: null,
+        blast_radius: [],
+      };
+    }
+
+    const rootResult = await session.run(
+      `MATCH (f:Function {changed:true, status:'failing'})
+       WHERE NOT EXISTS { MATCH (f)-[:CALLS]->(:Function {changed:true}) }
+       RETURN f.name AS root_cause`,
+    );
+    const rootCause: string | null = rootResult.records[0]?.get('root_cause') ?? null;
+
+    const blastRadius = rootCause
+      ? (
+          await session.run(
+            `MATCH (caller:Function)-[:CALLS*]->(root:Function {name:$root})
+             RETURN DISTINCT caller.name AS affected`,
+            { root: rootCause },
+          )
+        ).records.map((r) => r.get('affected'))
+      : [];
+
+    return {
+      status: 'incident',
+      failing_tests: failingTests,
+      changed_functions: changedFunctions,
+      root_cause: rootCause,
+      blast_radius: blastRadius,
+    };
+  } finally {
+    await session.close();
+  }
+});
+
 await app.listen({ port: PORT, host: '0.0.0.0' });
 log('listening', { port: PORT });
 
