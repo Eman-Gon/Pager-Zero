@@ -1,15 +1,38 @@
 import Fastify from "fastify";
+import pg from "pg";
 
 const app = Fastify({ logger: true });
 
-// POST /charge -> real pool query (Phase 1)
+function makePool(host: string) {
+  return new pg.Pool({
+    host,
+    port: Number(process.env.PGPORT ?? 5432),
+    database: process.env.PGDATABASE ?? "postgres",
+    user: process.env.PGUSER ?? "postgres",
+    password: process.env.PGPASSWORD,
+    max: Number(process.env.POOL_MAX ?? 5),
+    connectionTimeoutMillis: 2000,
+  });
+}
+
+let pool = makePool(process.env.PGHOST ?? "postgres");
+
 app.post("/charge", async (_req, reply) => {
-  return reply.code(501).send({ ok: false, error: "not implemented" });
+  try {
+    await pool.query("SELECT 1");
+    return { ok: true, charged: true };
+  } catch {
+    return reply.code(503).send({ ok: false });
+  }
 });
 
-// GET /health -> SELECT 1 via pool (Phase 1)
 app.get("/health", async (_req, reply) => {
-  return reply.code(501).send({ status: "unimplemented", service: "payments" });
+  try {
+    await pool.query("SELECT 1");
+    return { status: "ok", service: "payments" };
+  } catch {
+    return reply.code(503).send({ status: "degraded", service: "payments" });
+  }
 });
 
 // POST /admin/fault (Phase 2/3)
