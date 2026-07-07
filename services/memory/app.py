@@ -26,7 +26,7 @@ import os
 from typing import Any
 
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s memory %(levelname)s %(message)s")
 log = logging.getLogger("memory")
@@ -91,7 +91,7 @@ class RecallRequest(BaseModel):
 
 class RememberRequest(BaseModel):
     root_cause: str | None = None
-    failing_tests: list[str] = []
+    failing_tests: list[str] = Field(default_factory=list)
     fix_path: str | None = None
     fix_summary: str | None = None
     verified: bool | None = None
@@ -112,24 +112,28 @@ async def health() -> dict[str, Any]:
 @app.post("/ingest")
 async def ingest(req: IngestRequest) -> dict[str, Any]:
     """Add docs to Cognee and cognify them into the Neo4j knowledge graph."""
-    import cognee
-
     dataset = req.dataset or KNOWLEDGE_DATASET
-    for doc in req.documents:
-        await cognee.add(f"# {doc.title}\n\n{doc.text}", dataset_name=dataset)
-    await cognee.cognify(datasets=[dataset])
-    log.info("ingested %d docs into %s", len(req.documents), dataset)
-    return {"ok": True, "ingested": len(req.documents), "dataset": dataset}
+    try:
+        import cognee
+
+        for doc in req.documents:
+            await cognee.add(f"# {doc.title}\n\n{doc.text}", dataset_name=dataset)
+        await cognee.cognify(datasets=[dataset])
+        log.info("ingested %d docs into %s", len(req.documents), dataset)
+        return {"ok": True, "ingested": len(req.documents), "dataset": dataset}
+    except Exception as exc:  # noqa: BLE001 — ingestion is optional; responder keeps local runbooks
+        log.warning("ingest failed dataset=%s docs=%d: %s", dataset, len(req.documents), exc)
+        return {"ok": False, "error": str(exc), "ingested": 0, "dataset": dataset}
 
 
 @app.post("/recall")
 async def recall(req: RecallRequest) -> dict[str, Any]:
     """GraphRAG recall over the Cognee knowledge graph for a diagnosis query."""
-    import cognee
-    from cognee import SearchType
-
     dataset = req.dataset or KNOWLEDGE_DATASET
     try:
+        import cognee
+        from cognee import SearchType
+
         results = await cognee.search(
             query_text=req.query,
             query_type=SearchType.GRAPH_COMPLETION,
@@ -146,8 +150,6 @@ async def recall(req: RecallRequest) -> dict[str, Any]:
 @app.post("/remember")
 async def remember(req: RememberRequest) -> dict[str, Any]:
     """Persist one incident+fix episode as long-term memory in Neo4j."""
-    import cognee
-
     lines = [
         f"Incident root cause: {req.root_cause or 'unknown'}.",
         f"Failing tests: {', '.join(req.failing_tests) if req.failing_tests else 'none recorded'}.",
@@ -162,7 +164,13 @@ async def remember(req: RememberRequest) -> dict[str, Any]:
         lines.append(f"Shipped as PR {req.pr_url}.")
     episode = " ".join(lines)
 
-    await cognee.add(episode, dataset_name=EPISODE_DATASET)
-    await cognee.cognify(datasets=[EPISODE_DATASET])
-    log.info("remembered incident root_cause=%s", req.root_cause)
-    return {"ok": True, "dataset": EPISODE_DATASET}
+    try:
+        import cognee
+
+        await cognee.add(episode, dataset_name=EPISODE_DATASET)
+        await cognee.cognify(datasets=[EPISODE_DATASET])
+        log.info("remembered incident root_cause=%s", req.root_cause)
+        return {"ok": True, "dataset": EPISODE_DATASET}
+    except Exception as exc:  # noqa: BLE001 — memory is optional; shipping must not fail
+        log.warning("remember failed root_cause=%s: %s", req.root_cause, exc)
+        return {"ok": False, "error": str(exc), "dataset": EPISODE_DATASET}

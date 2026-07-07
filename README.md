@@ -53,10 +53,11 @@ RescueOps++ uses a **Cerberus-style** RocketRide setup: wave-planning agent firs
 
 | Pipeline | File | When |
 | -------- | ---- | ---- |
+| Native (optional) | `services/responder/rescueops-diagnose-native.pipe` | `RESCUEOPS_NATIVE_PIPELINE=1`; RocketRide native `db_neo4j` + `tool_butterbase` |
 | Agent (primary) | `services/responder/rescueops-diagnose-agent.pipe` | `agent_rocketride` + Neo4j MCP + `memory_internal` + blast-radius scorer |
 | Query (fallback) | `services/responder/rescueops-diagnose-query.pipe` | Pre-assembled context → prompt → Butterbase LLM |
 
-SDK client: `services/responder/src/pipeline.ts` (loads agent pipe first, falls back to query pipe).
+SDK client: `services/responder/src/pipeline.ts` (loads native only when explicitly enabled, otherwise agent first, then query fallback).
 
 **Required keys** (in `.env`):
 
@@ -67,6 +68,7 @@ SDK client: `services/responder/src/pipeline.ts` (loads agent pipe first, falls 
 
 - `NEO4J_MCP_ENDPOINT` — neo4j-mcp HTTP bridge (default `http://localhost:8787/mcp`)
 - `RESCUEOPS_AGENT_PIPELINE=0` — skip agent; use query fallback only
+- `RESCUEOPS_NATIVE_PIPELINE=1` — try the native RocketRide pipe first; load failures or invalid answers fall back to the existing agent/query path
 
 **Docs in this repo:**
 
