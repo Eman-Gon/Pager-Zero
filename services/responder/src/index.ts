@@ -110,6 +110,15 @@ app.get('/health', async () => {
   } catch {
     /* neo4j unreachable */
   }
+  // RocketRide's WebSocket can drop while idle; reconnect before reporting
+  // status so Mission Control doesn't show "disconnected" when Cloud is fine.
+  if (rocketrideConfigured()) {
+    try {
+      await pipeline.ensureConnected();
+    } catch {
+      /* rocketride unreachable */
+    }
+  }
   return {
     sensor,
     neo4j,

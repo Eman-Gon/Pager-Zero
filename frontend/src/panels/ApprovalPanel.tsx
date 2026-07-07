@@ -90,12 +90,8 @@ export default function ApprovalPanel({
 
       {pending.map((r) => (
         <div key={r.id} className="approval-card">
-          <div className="approval-card-head">
-            <span className="muted">approval</span>
-            <code>{r.id.slice(0, 8)}</code>
-            <ResultBadge kind="warn">pending</ResultBadge>
-          </div>
-          <div className="row">
+          <code>{r.id.slice(0, 8)}</code>
+          <div className="approval-actions">
             <button className="good" disabled={!!busy} onClick={() => decide(r.id, 'approved')}>
               {busy === r.id && busyDecision === 'approved' ? 'Shipping…' : 'Approve & ship'}
             </button>

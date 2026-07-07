@@ -135,11 +135,11 @@ All four are automated in `./scripts/e2e-negative.sh`:
 
 ## 5. Known demo caveats (be honest if asked)
 
-- **Credits are synthetic on this Butterbase app**: the app blocks writes to
-  the `accounts` table (HTTP 404, server-side), so demo credits are granted
-  and spent in-memory per request — the spend is logged and enforced (the
-  paywall proof passes) but the displayed balance doesn't decrement across
-  requests. Fix belongs in the app's RLS policy for `accounts`.
+- **Credits are real**: grants and spends persist to the Butterbase `accounts`
+  table (updates go through `PATCH /accounts/:id`, the only single-row update
+  route the Data API exposes), so the displayed balance genuinely decrements
+  across requests and survives restarts. If a write ever fails, the responder
+  logs it and falls back to an in-memory balance so the demo never hard-stops.
 - **MTTR** is real wall-clock from incident open to PR — during rehearsals it
   can look large because the incident sat open while you talked.
 - The RocketRide **agent-tools pipeline** (`rescueops-diagnose-agent.pipe`)

@@ -48,12 +48,12 @@ async function loadGraph(): Promise<{ nodes: GNode[]; links: GLink[] }> {
 }
 
 const COLOR = {
-  root: '#ff5c7a',
-  blast: '#f5b544',
-  fn: '#35e0d8',
-  test: '#3d5a6d',
-  calls: '#1c4a55',
-  tests: '#173845',
+  root: '#f2647f',
+  blast: '#e6b45a',
+  fn: '#d8d8de',
+  test: '#4a4a52',
+  calls: '#2a2a30',
+  tests: '#222228',
 } as const;
 
 const short = (id: string) => id.replace('test/', '');
