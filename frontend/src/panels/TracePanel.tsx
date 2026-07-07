@@ -29,6 +29,7 @@ export default function TracePanel({
   const [result, setResult] = useState<Diagnosis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [restored, setRestored] = useState(false);
+  const [pipeline, setPipeline] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -54,6 +55,7 @@ export default function TracePanel({
     setError(null);
     setRestored(false);
     setResult(null);
+    setPipeline(null);
     try {
       const { status, data } = await diagnose(token);
       if (status !== 200) throw new Error(data.error ?? `HTTP ${status}`);
@@ -61,6 +63,7 @@ export default function TracePanel({
         setError('no incident — nothing to diagnose');
       } else {
         setResult(data.diagnosis);
+        setPipeline(data.pipeline ?? null);
         setDone(true);
       }
     } catch (err) {
@@ -78,6 +81,7 @@ export default function TracePanel({
         </button>
         {restored && result && !busy && <ResultBadge kind="info">restored from Butterbase</ResultBadge>}
         {done && result && !busy && <ResultBadge kind="ok">diagnosis complete</ResultBadge>}
+        {pipeline && !busy && <ResultBadge kind="info">{pipeline} pipeline</ResultBadge>}
       </div>
 
       <ActionProgress

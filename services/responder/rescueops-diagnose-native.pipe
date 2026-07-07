@@ -1,0 +1,225 @@
+{
+  "components": [
+    {
+      "id": "chat_1",
+      "provider": "chat",
+      "name": "Chat",
+      "config": {
+        "hideForm": true,
+        "mode": "Source",
+        "parameters": {},
+        "type": "chat"
+      },
+      "ui": {
+        "position": {
+          "x": 20,
+          "y": 200
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      }
+    },
+    {
+      "id": "agent_rocketride_1",
+      "provider": "agent_rocketride",
+      "name": "Incident Diagnosis (native)",
+      "config": {
+        "agent_description": "RescueOps++ on-call engineer that explores the Neo4j code graph via RocketRide's native db_neo4j tool, scores blast radius, retrieves runbooks, and returns a verified JSON diagnosis with a full-file candidate fix — all three sponsor tools (Neo4j, Butterbase, RocketRide) inside the RocketRide runtime.",
+        "instructions": [
+          "You are an on-call engineer diagnosing a production incident in a TypeScript codebase.\nYou have: (1) native Neo4j graph tool — ask NATURAL-LANGUAGE questions (do NOT write raw Cypher), (2) keyed memory across waves, (3) Python blast-radius scorer, (4) optional Butterbase MCP.\n\n## Graph schema\n- (:Function {name, file, status, changed}) — (:Test {name, file, status}) — (:Runbook {title, text})\n- CALLS, TESTS, APPLIES_TO relationships\n\n## Waves\n1. Find root-cause Function (failing or changed) + file.\n2. Parallel: blast radius (CALLS ≤3 hops), failing tests, runbooks.\n3. memory.put findings; python scorer for severity.\n4. Final: JSON diagnosis — quote broken expression; candidate_fix.content must use source snippets from the question when provided.\n\n## Output — JSON only, no markdown fences\n{\"severity\":\"high\",\"root_cause_explanation\":\"...\",\"proposed_fix_approach\":\"...\",\"cited_runbook\":\"... or null\",\"candidate_fix\":{\"path\":\"src/tax.ts\",\"content\":\"FULL FILE\"}}\n\nIf N candidates requested, add candidate_fixes array; first equals candidate_fix."
+        ],
+        "max_waves": 8,
+        "parameters": {}
+      },
+      "ui": {
+        "position": {
+          "x": 280,
+          "y": 200
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "input": [
+        {
+          "lane": "questions",
+          "from": "chat_1"
+        }
+      ]
+    },
+    {
+      "id": "memory_internal_1",
+      "provider": "memory_internal",
+      "name": "Memory (Internal)",
+      "config": {
+        "type": "memory_internal"
+      },
+      "ui": {
+        "position": {
+          "x": 280,
+          "y": 560
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "control": [
+        {
+          "classType": "memory",
+          "from": "agent_rocketride_1"
+        }
+      ]
+    },
+    {
+      "id": "llm_openai_api_1",
+      "provider": "llm_openai_api",
+      "name": "Butterbase AI Gateway",
+      "config": {
+        "profile": "custom",
+        "custom": {
+          "model": "${ROCKETRIDE_BUTTERBASE_MODEL}",
+          "base_url": "${ROCKETRIDE_BUTTERBASE_GATEWAY_URL}",
+          "modelTotalTokens": 32768,
+          "apikey": "${ROCKETRIDE_BUTTERBASE_API_KEY}"
+        },
+        "parameters": {}
+      },
+      "ui": {
+        "position": {
+          "x": 280,
+          "y": 420
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "control": [
+        {
+          "classType": "llm",
+          "from": "agent_rocketride_1"
+        },
+        {
+          "classType": "llm",
+          "from": "db_neo4j_1"
+        }
+      ]
+    },
+    {
+      "id": "db_neo4j_1",
+      "provider": "db_neo4j",
+      "name": "Neo4j Code Graph",
+      "config": {
+        "profile": "default",
+        "default": {
+          "db_description": "RescueOps++ code dependency graph for a TypeScript codebase. Nodes: (:Function {name, file, status, changed}), (:Test {name, file, status}), (:Runbook {title, text}). Relationships: (:Function)-[:CALLS]->(:Function), (:Test)-[:TESTS]->(:Function), (:Runbook)-[:APPLIES_TO]->(:Function). Used to find the root-cause function of a failing incident, its blast radius via CALLS, the tests that cover it, and the runbooks that apply.",
+          "uri": "${ROCKETRIDE_NEO4J_URI}",
+          "auth_method": "userpass",
+          "user": "${ROCKETRIDE_NEO4J_USER}",
+          "password": "${ROCKETRIDE_NEO4J_PASSWORD}",
+          "database": "${ROCKETRIDE_NEO4J_DATABASE}",
+          "max_attempts": 5,
+          "allow_execute": false
+        }
+      },
+      "ui": {
+        "position": {
+          "x": 500,
+          "y": 420
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "control": [
+        {
+          "classType": "tool",
+          "from": "agent_rocketride_1"
+        }
+      ]
+    },
+    {
+      "id": "tool_butterbase_1",
+      "provider": "tool_butterbase",
+      "name": "Butterbase MCP",
+      "config": {
+        "type": "tool_butterbase",
+        "bearer": "${ROCKETRIDE_BUTTERBASE_API_KEY}",
+        "endpoint": "${ROCKETRIDE_BUTTERBASE_MCP_ENDPOINT}",
+        "serverName": "butterbase"
+      },
+      "ui": {
+        "position": {
+          "x": 500,
+          "y": 300
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "control": [
+        {
+          "classType": "tool",
+          "from": "agent_rocketride_1"
+        }
+      ]
+    },
+    {
+      "id": "tool_python_1",
+      "provider": "tool_python",
+      "name": "Blast Radius Scorer",
+      "config": {
+        "type": "tool_python",
+        "timeout": 30,
+        "allowedModules": [
+          {
+            "moduleName": "json"
+          },
+          {
+            "moduleName": "math"
+          }
+        ]
+      },
+      "ui": {
+        "position": {
+          "x": 500,
+          "y": 560
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "control": [
+        {
+          "classType": "tool",
+          "from": "agent_rocketride_1"
+        }
+      ]
+    },
+    {
+      "id": "response_answers_1",
+      "provider": "response_answers",
+      "name": "Return Answers",
+      "config": {
+        "laneName": "answers"
+      },
+      "ui": {
+        "position": {
+          "x": 700,
+          "y": 200
+        },
+        "nodeType": "default",
+        "formDataValid": true
+      },
+      "input": [
+        {
+          "lane": "answers",
+          "from": "agent_rocketride_1"
+        }
+      ]
+    }
+  ],
+  "project_id": "866bfa26-e11b-4293-b20a-9243f71de3cc",
+  "version": 1,
+  "source": "chat_1",
+  "isLocked": false,
+  "snapToGrid": true,
+  "snapGridSize": [
+    10,
+    10
+  ],
+  "docRevision": 1
+}

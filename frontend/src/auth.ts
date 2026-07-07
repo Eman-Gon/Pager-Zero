@@ -16,11 +16,30 @@ export function saveSession(token: string, email: string) {
   butterbase.setAccessToken(token);
 }
 
+// Butterbase access tokens are short-lived. A stored token past its `exp` makes
+// every Data API call fail with AUTH_END_USER_JWT_EXPIRED (401) — persist,
+// account sync, approvals all break — with no recovery until storage is cleared.
+// Decode the JWT `exp` (base64url payload) so an expired token is treated as
+// absent; the app then re-signs-in for a fresh one instead of looping on 401s.
+export function tokenExpired(token: string, skewSeconds = 30): boolean {
+  try {
+    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
+    const { exp } = JSON.parse(atob(b64)) as { exp?: number };
+    return typeof exp === 'number' && exp * 1000 <= Date.now() + skewSeconds * 1000;
+  } catch {
+    return false; // unparseable — let the server be the judge
+  }
+}
+
 export function loadStoredSession(): { token: string; email: string } | null {
   try {
     const token = localStorage.getItem(TOKEN_KEY);
     const email = localStorage.getItem(EMAIL_KEY);
     if (!token) return null;
+    if (tokenExpired(token)) {
+      clearSession();
+      return null;
+    }
     butterbase.setAccessToken(token);
     return { token, email: email ?? DEMO_EMAIL };
   } catch {

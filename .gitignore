@@ -13,3 +13,4 @@ frontend/.env.local
 .neo4j/*
 !.neo4j/docs/
 !.neo4j/docs/**
+.rocketride/

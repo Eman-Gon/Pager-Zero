@@ -58,7 +58,7 @@ export async function fetchIncident(): Promise<Incident> {
 export interface HealthStatus {
   sensor: boolean;
   neo4j: boolean;
-  rocketride: { connected: boolean; transport: string; uri: string };
+  rocketride: { connected: boolean; transport: string; uri: string; pipeline?: string };
   butterbase: boolean;
   tools: {
     daytona: boolean;

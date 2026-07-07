@@ -58,6 +58,15 @@ services:
       NEO4J_PASSWORD: ${NEO4J_PASSWORD:-devpassword}
       NEO4J_DATABASE: ${NEO4J_DATABASE:-}
       SENSOR_URL: http://sensor:3003
+      # Cognee memory service (optional). Unset MEMORY_URL disables recall/remember
+      # and the responder falls back to its built-in runbook substrate.
+      MEMORY_URL: ${MEMORY_URL:-http://memory:3005}
+      COGNEE_ENABLED: ${COGNEE_ENABLED:-0}
+      COGNEE_MEMORY_ENABLED: ${COGNEE_MEMORY_ENABLED:-0}
+      # RocketRide native db_neo4j + tool_butterbase pipeline (opt-in).
+      RESCUEOPS_NATIVE_PIPELINE: ${RESCUEOPS_NATIVE_PIPELINE:-0}
+      # Diagnosis inference provider: butterbase (default) | nebius.
+      LLM_PROVIDER: ${LLM_PROVIDER:-butterbase}
       TARGET_DIR: /target
       PORT: "3004"
     ports:
@@ -67,6 +76,33 @@ services:
         condition: service_healthy
       sensor:
         condition: service_started
+
+  memory:
+    # Cognee semantic-memory service — writes its knowledge graph into the same
+    # Neo4j as the code graph (distinct labels). Optional; profile-gated so the
+    # baseline stack is unchanged unless you opt in.
+    profiles: ["memory"]
+    build: ./services/memory
+    environment:
+      # Cognee graph backend -> shared Neo4j.
+      GRAPH_DATABASE_PROVIDER: neo4j
+      GRAPH_DATABASE_URL: ${NEO4J_URL:-${NEO4J_URI:-bolt://host.docker.internal:7687}}
+      GRAPH_DATABASE_USERNAME: ${NEO4J_USER:-${NEO4J_USERNAME:-neo4j}}
+      GRAPH_DATABASE_PASSWORD: ${NEO4J_PASSWORD:-devpassword}
+      # Cognee LLM (entity extraction during cognify) — OpenAI-compatible gateway.
+      LLM_PROVIDER: ${COGNEE_LLM_PROVIDER:-custom}
+      LLM_MODEL: ${COGNEE_LLM_MODEL:-${BUTTERBASE_CHAT_MODEL:-anthropic/claude-sonnet-4.6}}
+      LLM_ENDPOINT: ${COGNEE_LLM_ENDPOINT:-${BUTTERBASE_GATEWAY_URL:-https://api.butterbase.ai/v1}}
+      LLM_API_KEY: ${COGNEE_LLM_API_KEY:-${BUTTERBASE_API_KEY:-}}
+      # Cognee embeddings — reuse Nebius (already the project's embedding provider).
+      EMBEDDING_PROVIDER: ${COGNEE_EMBEDDING_PROVIDER:-custom}
+      EMBEDDING_MODEL: ${COGNEE_EMBEDDING_MODEL:-${NEBIUS_EMBED_MODEL:-}}
+      EMBEDDING_ENDPOINT: ${NEBIUS_BASE_URL:-https://api.tokenfactory.nebius.com/v1}
+      EMBEDDING_API_KEY: ${NEBIUS_API_KEY:-}
+      EMBEDDING_DIMENSIONS: ${COGNEE_EMBEDDING_DIMENSIONS:-}
+      PORT: "3005"
+    ports:
+      - "3005:3005"
 
   sensor:
     build: ./services/sensor

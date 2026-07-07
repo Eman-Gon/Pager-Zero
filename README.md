@@ -9,6 +9,7 @@ Autonomous on-call engineer: watches a codebase, detects broken commits, diagnos
 | `sensor` | 3003 | Static code graph (Neo4j), incident detection |
 | `responder` | 3004 | AI diagnosis, sandbox verify, policy gate, GitHub PR |
 | `neo4j` | 7474 / 7687 | Code graph + runbook vector index |
+| `memory` | 3005 | Cognee semantic memory → Neo4j (optional, compose profile `memory`) |
 | `frontend` | 5173 (dev) | Mission Control dashboard |
 
 ## Quick start
@@ -48,12 +49,24 @@ By default RescueOps++ waits for a click in Mission Control (`/diagnose`, `/reme
 
 ## RocketRide (diagnosis pipeline)
 
-RescueOps++ runs its diagnosis pipeline on **RocketRide Cloud** — not a local engine. The pipeline file is `services/responder/diagnose.pipe`; the SDK client is in `services/responder/src/pipeline.ts`.
+RescueOps++ uses a **Cerberus-style** RocketRide setup: wave-planning agent first, simple prompt→LLM fallback.
+
+| Pipeline | File | When |
+| -------- | ---- | ---- |
+| Agent (primary) | `services/responder/rescueops-diagnose-agent.pipe` | `agent_rocketride` + Neo4j MCP + `memory_internal` + blast-radius scorer |
+| Query (fallback) | `services/responder/rescueops-diagnose-query.pipe` | Pre-assembled context → prompt → Butterbase LLM |
+
+SDK client: `services/responder/src/pipeline.ts` (loads agent pipe first, falls back to query pipe).
 
 **Required keys** (in `.env`):
 
-- `ROCKETRIDE_APIKEY` — from [rocketride.ai](https://rocketride.ai)
-- `ROCKETRIDE_URI` — `https://api.rocketride.ai`
+- `ROCKETRIDE_APIKEY` — from [rocketride.ai](https://rocketride.ai) (optional for local engine)
+- `ROCKETRIDE_URI` — `ws://localhost:5565` (local) or `https://api.rocketride.ai` (cloud)
+
+**Optional (agent pipeline — same pattern as [Cerberus](https://github.com/kvn8888/Cerberus)):**
+
+- `NEO4J_MCP_ENDPOINT` — neo4j-mcp HTTP bridge (default `http://localhost:8787/mcp`)
+- `RESCUEOPS_AGENT_PIPELINE=0` — skip agent; use query fallback only
 
 **Docs in this repo:**
 
@@ -107,9 +120,23 @@ Neo4j holds the code graph and runbook vector index. **Native dev** uses Aura cr
 
 | Provider | Used for | Env vars |
 | -------- | -------- | -------- |
-| Nebius | Runbook embeddings | `NEBIUS_*` |
+| Nebius | Runbook embeddings + optional diagnosis inference | `NEBIUS_*`, `LLM_PROVIDER` |
 | Daytona | Sandbox test verification | `DAYTONA_*` |
+| Cognee | Semantic memory → Neo4j (knowledge + episodic) | `MEMORY_URL`, `COGNEE_*` |
 | GitHub | Fix PRs | `GITHUB_TOKEN`, `GITHUB_REPO` |
+
+## Sponsor cross-integrations (opt-in)
+
+Four sponsor-called-out integrations, each gated behind an env flag that **defaults to the existing behavior** — the baseline diagnose → verify → PR demo never changes unless you opt in.
+
+| Integration | Prize(s) | Turn on with | What it does |
+| ----------- | -------- | ------------ | ------------ |
+| **Cognee → Neo4j** | Neo4j + Cognee | `docker compose --profile memory up`, `COGNEE_ENABLED=1` | The `memory` service cognifies the runbook corpus into a knowledge graph stored **in the same Neo4j** (distinct labels) and the responder recalls it at diagnosis time. Falls back to the built-in `runbook_vec` substrate when off. |
+| **RocketRide native tools** | RocketRide | `RESCUEOPS_NATIVE_PIPELINE=1` | Loads `rescueops-diagnose-native.pipe`, which reaches Neo4j via RocketRide's own `db_neo4j` component and adds `tool_butterbase` — all three tools running **inside** RocketRide. Falls through to the MCP agent pipe on any failure. |
+| **Cognee + Daytona memory** | Cognee + Daytona | `COGNEE_MEMORY_ENABLED=1` | Every shipped fix is remembered as a Cognee episode in Neo4j and recalled before future diagnoses — persistent agent memory that survives restarts and the disposable Daytona verify sandboxes. |
+| **Nebius inference** | Nebius | `LLM_PROVIDER=nebius` | Routes the RocketRide diagnosis LLM through Nebius Token Factory (OpenAI-compatible), on top of the embeddings it already powers. A Nebius Claude-Code proxy (point any CLI agent's OpenAI base URL at `NEBIUS_BASE_URL`) frees the coding agent from a single model provider. |
+
+See `.env.example` for every flag. The `memory` service is Python (Cognee is Python-native); the responder calls it over HTTP and degrades gracefully when it is absent.
 
 ## Milestones
 

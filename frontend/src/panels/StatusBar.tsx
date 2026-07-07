@@ -35,7 +35,8 @@ export default function StatusBar() {
 
   const rr = health.rocketride;
   const rrOk = rr.connected;
-  const rrTitle = rr.connected ? rr.uri : 'RocketRide Cloud disconnected — Diagnose unavailable';
+  const pipe = rr.pipeline ? ` · ${rr.pipeline} pipe` : '';
+  const rrTitle = rr.connected ? `${rr.uri}${pipe}` : 'RocketRide disconnected — Diagnose unavailable';
   const tools = health.tools;
 
   return (

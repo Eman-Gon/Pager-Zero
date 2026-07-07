@@ -16,7 +16,7 @@ FRONTEND_PID="$PID_DIR/frontend.pid"
 SENSOR_LOG="$PID_DIR/sensor.log"
 RESPONDER_LOG="$PID_DIR/responder.log"
 FRONTEND_LOG="$PID_DIR/frontend.log"
-TARGET="$ROOT/target-repo"
+TARGET="${PATIENT_REPO:-$ROOT/target-repo}"
 FRONTEND_ENV="$ROOT/frontend/.env.local"
 
 port_owner() {
@@ -81,6 +81,7 @@ ensure_env() {
   fi
 
   export TARGET_DIR="$TARGET"
+  export PATIENT_REPO="${PATIENT_REPO:-target-repo}"
   export SENSOR_URL="${SENSOR_URL:-http://localhost:3003}"
   export PORT
 }
