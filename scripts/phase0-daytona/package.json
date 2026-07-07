@@ -1,0 +1,12 @@
+{
+  "name": "phase0-daytona",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node smoke.mjs"
+  },
+  "dependencies": {
+    "@daytona/sdk": "^0.194.0"
+  }
+}

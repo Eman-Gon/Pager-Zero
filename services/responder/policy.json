@@ -1,0 +1,6 @@
+{
+  "comment": "Deterministic ship policy (M7). Evaluated by code — never an LLM.",
+  "require_approval_severities": ["high"],
+  "max_auto_blast_radius": 2,
+  "protected_paths": ["src/payments/", "src/auth/", "src/billing/"]
+}

@@ -4,12 +4,17 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "fastify": "^4.28.1",
     "neo4j-driver": "^5.28.0",
     "ts-morph": "^24.0.0",
     "tsx": "^4.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^5.7.3"
   }
 }

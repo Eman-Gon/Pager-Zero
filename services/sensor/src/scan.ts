@@ -4,6 +4,7 @@ import { readFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import type { Driver } from 'neo4j-driver';
+import { openSession } from './neo4j-config.js';
 import { log } from './log.js';
 
 // execFile with argument arrays only — no shell involved anywhere in this module.
@@ -63,7 +64,7 @@ async function runTests(
 export async function scan(driver: Driver, targetDir: string): Promise<void> {
   const tests = await runTests(targetDir);
   const changed = await changedFiles(targetDir);
-  const session = driver.session();
+  const session = openSession(driver);
   try {
     await session.executeWrite(async (tx) => {
       const testResult = await tx.run(

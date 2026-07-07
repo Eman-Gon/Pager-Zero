@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Driver } from 'neo4j-driver';
+import { openSession } from './neo4j-config.js';
 import type { RunbookHit } from './runbooks.js';
 
 export interface Incident {
@@ -23,7 +24,7 @@ async function readSnippet(targetDir: string, relFile: string): Promise<string> 
 }
 
 export async function functionFile(driver: Driver, fnName: string): Promise<string | null> {
-  const session = driver.session();
+  const session = openSession(driver);
   try {
     const res = await session.run(`MATCH (f:Function {name: $name}) RETURN f.file AS file`, {
       name: fnName,
