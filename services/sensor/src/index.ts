@@ -4,6 +4,7 @@ import { analyzeTarget, writeCodeGraph } from './codegraph.js';
 import { log } from './log.js';
 import { createDriver, openSession } from './neo4j-config.js';
 import { ensureTargetDeps, gitHead, scan } from './scan.js';
+import { registerCors } from './cors.js';
 
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
 const PORT = Number(process.env.PORT ?? 3003);
@@ -35,6 +36,7 @@ log('graph_built', {
 });
 
 const app = Fastify();
+registerCors(app);
 
 app.get('/incident', async () => {
   const session = openSession(driver);

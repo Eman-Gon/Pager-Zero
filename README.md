@@ -43,6 +43,17 @@ curl -X POST http://localhost:3004/diagnose
 
 5. UI: http://localhost:5173 (`dev-native.sh` starts it; with Docker-only, run `cd frontend && npm run dev`).
 
+**Butterbase hosting (live URL):** build and deploy Mission Control to Butterbase Pages:
+
+```bash
+# Expose sensor (:3003) + responder (:3004) publicly first (VPS or tunnel), then:
+VITE_SENSOR_URL=https://your-host:3003 \
+VITE_RESPONDER_URL=https://your-host:3004 \
+./scripts/deploy-frontend.sh
+```
+
+See `DEMO.md` for the on-stage runbook.
+
 ## Autonomous mode
 
 By default RescueOps++ waits for a click in Mission Control (`/diagnose`, `/remediate`, `/apply`). Set `AUTONOMOUS=1` in `.env` to make the responder a true autonomous on-call engineer: it watches the sensor and, the moment a new incident appears, runs **diagnose → remediate → apply** itself — no human in the loop. It acts as the service account (`SERVICE_EMAIL` / `SERVICE_PASSWORD`, defaulting to the demo on-call user), so incidents and actions persist under RLS exactly as an operator's would, and the policy gate still applies: risky fixes park as pending approvals rather than auto-shipping a PR. Requires Butterbase to be configured. Tune the watch cadence with `AUTONOMOUS_POLL_MS` (default 5000).

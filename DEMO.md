@@ -19,6 +19,8 @@ Control panel shows at every beat. Verified end-to-end by `scripts/e2e.sh`
   see the incident is a *real bad commit*, not a staged flag.
 - Backup slide URL (UI shell only, no live backends):
   https://composio-expense-approval.butterbase.dev
+- **Live URL:** `./scripts/deploy-frontend.sh` (needs `VITE_SENSOR_URL` +
+  `VITE_RESPONDER_URL` pointing at a public sensor/responder — tunnel or VPS)
 
 ## 1. The beats
 

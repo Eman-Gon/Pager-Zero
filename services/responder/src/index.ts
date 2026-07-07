@@ -42,6 +42,7 @@ import {
   recordOpseraDeployment,
 } from './opsera.js';
 import { startAutonomousLoop } from './autonomous.js';
+import { registerCors } from './cors.js';
 
 const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
@@ -84,6 +85,7 @@ if (knowledgeEnabled()) {
 }
 
 const app = Fastify();
+registerCors(app);
 
 app.get('/connection', async () => {
   // Proof the pipeline runs on RocketRide Cloud: connect (if not yet) and
