@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
@@ -18,6 +18,22 @@ export interface VerifyResult {
 function assertSafeRepoPath(p: string): void {
   if (path.isAbsolute(p) || p.split(/[\\/]/).includes('..')) {
     throw new Error(`candidate_fix.path escapes the repo: ${p}`);
+  }
+}
+
+// A candidate whose path doesn't exist in the patient would land as an orphan
+// file the tests never import — the untouched suite passes and rubber-stamps
+// the "fix". Reject it as unverified instead of letting it trivially pass.
+async function rejectOrphanPath(targetDir: string, p: string): Promise<VerifyResult | null> {
+  try {
+    await access(path.join(targetDir, p));
+    return null;
+  } catch {
+    log('verify_rejected_orphan_path', { path: p });
+    return {
+      verified: false,
+      test_output: `candidate_fix.path "${p}" does not exist in the target repo — a fix must modify a file the test suite actually covers`,
+    };
   }
 }
 
@@ -79,6 +95,8 @@ async function applyAndTest(sandbox: Sandbox, candidate: CandidateFix): Promise<
 // apply the candidate (full-file replace) → real `npm test` decides.
 export async function verifyCandidate(targetDir: string, candidate: CandidateFix): Promise<VerifyResult> {
   assertSafeRepoPath(candidate.path);
+  const orphan = await rejectOrphanPath(targetDir, candidate.path);
+  if (orphan) return orphan;
   const tarball = await packRepo(targetDir);
   let sandbox: Sandbox | undefined;
   try {
@@ -204,6 +222,8 @@ export async function verifyCandidatesParallel(
     const results = await Promise.all(
       created.map(async (sandbox, i) => {
         const candidate = candidates[i];
+        const orphan = await rejectOrphanPath(targetDir, candidate.path);
+        if (orphan) return { candidate_index: i, ...orphan };
         if (tarball) await setupRepo(sandbox, tarball);
         await sandbox.fs.uploadFile(
           Buffer.from(candidate.content, 'utf8'),

@@ -61,7 +61,7 @@ export default function SandboxPanel({
           setDone(true);
         }
       })
-      .catch(() => {});
+      .catch((err) => console.warn('sandbox restore failed', err));
     return () => {
       alive = false;
     };

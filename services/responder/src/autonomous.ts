@@ -71,6 +71,10 @@ export function startAutonomousLoop(opts: { sensorUrl: string; selfUrl: string }
     log('autonomous_disabled', { reason: 'Butterbase not configured — cannot sign in as the service account' });
     return;
   }
+  if (!SERVICE_PASSWORD) {
+    log('autonomous_disabled', { reason: 'SERVICE_PASSWORD not set — refusing to run with no credential' });
+    return;
+  }
   log('autonomous_enabled', { poll_ms: POLL_MS, service: SERVICE_EMAIL });
 
   let handled: string | null = null;

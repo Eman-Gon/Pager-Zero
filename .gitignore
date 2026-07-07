@@ -14,3 +14,5 @@ frontend/.env.local
 !.neo4j/docs/
 !.neo4j/docs/**
 .rocketride/
+frontend/tsconfig.tsbuildinfo
+__pycache__/
