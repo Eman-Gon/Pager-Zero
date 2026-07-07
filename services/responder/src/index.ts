@@ -3,7 +3,7 @@ import type { Driver } from 'neo4j-driver';
 import { assembleContext, functionFile, type Incident } from './context.js';
 import { log } from './log.js';
 import { createDriver } from './neo4j-config.js';
-import { DiagnosisPipeline, type CandidateFix, type Diagnosis } from './pipeline.js';
+import { DiagnosisPipeline, type CandidateFix, type Diagnosis, rocketrideConfigured } from './pipeline.js';
 import { ensureRunbookSubstrate, retrieveRunbooks } from './runbooks.js';
 import { verifyCandidate, verifyCandidatesParallel } from './verify.js';
 import {
@@ -89,7 +89,7 @@ app.get('/health', async () => {
       daytona: Boolean(process.env.DAYTONA_API_KEY),
       github: githubConfigured(),
       nebius: Boolean(process.env.NEBIUS_API_KEY && process.env.NEBIUS_EMBED_MODEL),
-      rocketride: Boolean(process.env.ROCKETRIDE_APIKEY),
+      rocketride: rocketrideConfigured(),
     },
   };
 });

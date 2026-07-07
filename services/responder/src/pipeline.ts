@@ -151,7 +151,7 @@ export class DiagnosisPipeline {
   async ensureConnected(): Promise<void> {
     // Do not cache "connected" — the WebSocket can drop between requests.
     if (this.client.isConnected()) return;
-    if (!process.env.ROCKETRIDE_APIKEY) {
+    if (!rocketrideConfigured()) {
       throw new Error('ROCKETRIDE_APIKEY not set — cannot reach RocketRide Cloud');
     }
     await this.client.connect();
