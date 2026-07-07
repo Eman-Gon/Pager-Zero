@@ -35,6 +35,12 @@ import {
 } from './butterbase.js';
 import { evaluatePolicy } from './policy.js';
 import { githubConfigured, openFixPr } from './ship.js';
+import {
+  OpseraGateError,
+  evaluateOpseraGate,
+  opseraConfigured,
+  recordOpseraDeployment,
+} from './opsera.js';
 import { startAutonomousLoop } from './autonomous.js';
 
 const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
@@ -114,6 +120,7 @@ app.get('/health', async () => {
       github: githubConfigured(),
       nebius: Boolean(process.env.NEBIUS_API_KEY && process.env.NEBIUS_EMBED_MODEL),
       rocketride: rocketrideConfigured(),
+      opsera: opseraConfigured(),
     },
   };
 });
@@ -226,13 +233,24 @@ app.post('/diagnose', async (request, reply) => {
 async function shipVerifiedFix(
   token: string,
   pending: { action: ActionRow; incident: StoredIncidentRow },
-): Promise<{ pr_url: string; branch: string; mttr_seconds: number }> {
+): Promise<{ pr_url: string; branch: string; mttr_seconds: number; opsera_gate?: boolean }> {
   // Idempotency guard: never ship the same action twice. Two approvals for one
   // action (or a re-approved record) would otherwise open two PRs and spend two
   // credits. latestVerifiedAction already filters applied rows for /apply; this
   // covers the /approvals path where the action is loaded by id.
   if (pending.action.applied) {
     throw new AlreadyAppliedError();
+  }
+
+  // M6 Phase 2: Opsera policy-as-code gate runs BEFORE any credit is spent or
+  // PR opened. A policy-violating fix is blocked at the gate (no side effects).
+  const opseraGate = evaluateOpseraGate({
+    action_type: pending.action.type,
+    fix_path: pending.action.candidate_fix!.path,
+  });
+  if (!opseraGate.allowed) {
+    log('opsera_gate_blocked', { reasons: opseraGate.reasons });
+    throw new OpseraGateError('blocked by Opsera policy gate', opseraGate.reasons);
   }
 
   await spendCredit(token);
@@ -254,6 +272,16 @@ async function shipVerifiedFix(
   }
 
   const { mttr_seconds } = await markApplied(token, pending.action, pending.incident);
+
+  // Record the deployment + DORA Time-to-Restore in Opsera (best-effort).
+  void recordOpseraDeployment({
+    root_cause: pending.incident.root_cause,
+    fix_path: pending.action.candidate_fix!.path,
+    pr_url,
+    branch,
+    mttr_seconds,
+    severity: pending.incident.severity,
+  });
 
   // Integration 3: remember this shipped fix as long-term agent memory (persisted
   // in Neo4j via Cognee) so future diagnoses — and restarted / sandboxed agents —
@@ -308,6 +336,10 @@ app.post('/apply', async (request, reply) => {
     if (err instanceof AlreadyAppliedError) {
       reply.code(409);
       return { error: 'already_applied', message: err.message };
+    }
+    if (err instanceof OpseraGateError) {
+      reply.code(422);
+      return { error: 'opsera_gate_blocked', reasons: err.reasons };
     }
     throw err;
   }
@@ -366,6 +398,10 @@ app.post('/approvals/:id', async (request, reply) => {
       await setApprovalStatus(token, id, 'approved');
       reply.code(409);
       return { status: 'approved', error: 'already_applied', message: err.message };
+    }
+    if (err instanceof OpseraGateError) {
+      reply.code(422);
+      return { error: 'opsera_gate_blocked', reasons: err.reasons };
     }
     throw err;
   }

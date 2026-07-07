@@ -399,7 +399,41 @@ export class DiagnosisPipeline {
   private async runOnce(token: string, context: string, kind: PipelineKind): Promise<Diagnosis> {
     this.waveLog = [];
     const response: unknown = await this.client.chat({ token, question: this.buildQuestion(context, kind) });
-    return parseDiagnosisResponse(response);
+    try {
+      return parseDiagnosisResponse(response);
+    } catch (err) {
+      const raw = extractPipelineAnswer(response) ?? response;
+      const snippet = (typeof raw === 'string' ? raw : JSON.stringify(raw ?? null)).slice(0, 400);
+      log('diagnose_parse_failed', {
+        pipeline: kind,
+        error: String(err),
+        response_keys: response && typeof response === 'object' ? Object.keys(response) : [],
+        raw_snippet: snippet,
+      });
+      throw err;
+    }
+  }
+
+  // Multi-wave agent/native pipes can stall on live RocketRide latency. Give the
+  // fancy pipe a bounded window, then fall back to the fast single-call query
+  // pipe so a diagnosis is never left hanging for the full request timeout.
+  private softTimeoutMs(): number {
+    const raw = Number(process.env.RESCUEOPS_DIAGNOSE_SOFT_TIMEOUT_MS);
+    return Number.isFinite(raw) && raw > 0 ? raw : 90_000;
+  }
+
+  private async runWithSoftTimeout(token: string, context: string, kind: PipelineKind): Promise<Diagnosis> {
+    if (kind === 'query') return this.runOnce(token, context, kind);
+    const ms = this.softTimeoutMs();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`pipeline ${kind} exceeded soft timeout ${ms}ms`)), ms);
+    });
+    try {
+      return await Promise.race([this.runOnce(token, context, kind), timeout]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
   }
 
   async diagnose(context: string): Promise<Diagnosis> {
@@ -408,7 +442,7 @@ export class DiagnosisPipeline {
 
     try {
       try {
-        const diagnosis = await this.runOnce(token, context, kind);
+        const diagnosis = await this.runWithSoftTimeout(token, context, kind);
         log('diagnose_pipeline_done', {
           pipeline: kind,
           severity: diagnosis.severity,
@@ -418,13 +452,11 @@ export class DiagnosisPipeline {
         return diagnosis;
       } catch (err) {
         log('diagnose_pipeline_retry', { pipeline: kind, error: String(err) });
-        // Agent/native returned garbage — fall back to query pipe with full
-        // context. A bad query answer gets one more attempt: LLM formatting
-        // flakes (non-JSON answers) are transient, and query is the last rung.
-        if (kind !== 'query') {
-          this.clearPipeline();
-          ({ token, kind } = await this.ensurePipeline('query'));
-        }
+        if (kind === 'query') throw err;
+        // Agent/native was slow or returned garbage — fall back to the fast
+        // single-call query pipe with the full assembled context.
+        this.clearPipeline();
+        ({ token, kind } = await this.ensurePipeline('query'));
         const diagnosis = await this.runOnce(token, context, 'query');
         log('diagnose_pipeline_done', { pipeline: kind, fallback: true, severity: diagnosis.severity });
         return diagnosis;

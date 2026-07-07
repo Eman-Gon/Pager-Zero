@@ -1,0 +1,6 @@
+{
+  "comment": "Opsera policy-as-code gate (M6 Phase 2). Deterministic — evaluated by code, reported to the Opsera pipeline. Blocks disallowed ship actions before any PR is opened.",
+  "allowed_action_types": ["remediate"],
+  "allowed_path_globs": ["src/**", "lib/**", "app/**"],
+  "blocked_path_globs": [".github/**", "**/*.yml", "**/*.yaml", "Dockerfile", "**/secrets/**"]
+}

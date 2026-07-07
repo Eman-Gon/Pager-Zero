@@ -229,6 +229,7 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
 export interface ActionRow {
   id: string;
   incident_id: string;
+  type: 'diagnose' | 'remediate';
   candidate_fix: CandidateFix | null;
   verified: boolean;
   applied: boolean;
