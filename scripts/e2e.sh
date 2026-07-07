@@ -127,11 +127,11 @@ ok "butterbase: $state"
 account_after=$(curl -sf -m 30 -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/account")
 credits_after=$(echo "$account_after" | jq -r '.apply_credits')
 plan_after=$(echo "$account_after" | jq -r '.plan')
-# Strict: the balance must actually drop by exactly one. This requires the
-# `accounts` table to have a primary key so Butterbase persists the write —
-# add one with:  ALTER TABLE accounts ADD COLUMN id uuid PRIMARY KEY DEFAULT gen_random_uuid();
+# Strict: the balance must actually drop by exactly one. Butterbase account
+# writes require an `accounts.id uuid primary key default gen_random_uuid()`
+# column; older apps with `user_id` as the only key need that schema migration.
 [[ "$credits_after" -eq $((credits_before - 1)) ]] \
-  || fail "credit not decremented: before=$credits_before after=$credits_after (plan=$plan_after) — if the balance did not drop, ensure the accounts table has a primary key so credit writes persist"
+  || fail "credit not decremented: before=$credits_before after=$credits_after (plan=$plan_after) — ensure accounts.id exists as a uuid primary key so credit writes persist"
 ok "credits: $credits_before -> $credits_after (plan: $plan_after)"
 
 # --- step 8: reset -> all green -------------------------------------------------------

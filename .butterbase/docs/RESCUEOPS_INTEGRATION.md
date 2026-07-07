@@ -47,8 +47,10 @@ All tables have row-level security — users see only their own rows.
 | ----- | ----------- | ---------- |
 | `incidents` | `root_cause`, `blast_radius` (jsonb), `severity`, `status`, `mttr_seconds` | `recordIncidentAction`, `markApplied` |
 | `actions` | `incident_id`, `type`, `candidate_fix` (jsonb), `verified`, `applied` | diagnose/remediate/ship flow |
-| `accounts` | `apply_credits`, `plan` | `ensureAccount`, `spendCredit` |
+| `accounts` | `id` (uuid primary key), `user_id`, `apply_credits`, `plan` | `ensureAccount`, `spendCredit` |
 | `approvals` | `action_id`, `status` (`pending`/`approved`/`denied`) | M7 approval gate |
+
+**Accounts write requirement:** Butterbase Data API writes use the row `id` path. The `accounts` table must have an `id uuid primary key default gen_random_uuid()` column so demo credit grants, credit spends, and refunds persist. If an older app has `user_id` as the primary key, migrate it in the Butterbase dashboard/MCP so `id` is the primary key and `user_id` remains the per-user lookup column.
 
 **jsonb gotcha:** top-level JS arrays are rejected by jsonb columns — wrap lists in an object:
 

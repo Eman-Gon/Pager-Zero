@@ -156,9 +156,26 @@ export async function recordIncidentAction(
 }
 
 interface AccountRow {
+  // Butterbase's Data API only supports writes via PATCH /table/:id (path param),
+  // filtering on a column literally named `id`. `accounts` must therefore carry
+  // an `id` column for credit writes to persist; before that migration `id` is
+  // undefined and writeAccount falls back to a (server-rejected) user_id filter.
+  id?: string;
   user_id: string;
   apply_credits: number;
   plan: string;
+}
+
+// Update the account row. Butterbase persists writes only when filtered by the
+// `id` path param, so prefer `id`; fall back to `user_id` when the accounts
+// table has not yet been migrated to include an `id` column.
+function writeAccount(
+  client: ButterbaseClient,
+  account: Pick<AccountRow, 'id' | 'user_id'>,
+  values: Partial<AccountRow>,
+) {
+  const q = client.from<AccountRow>('accounts').update(values);
+  return account.id ? q.eq('id', account.id) : q.eq('user_id', account.user_id);
 }
 
 // Fetch (or create) the user's account row, syncing plan + credits from the
@@ -188,10 +205,7 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
     account!.apply_credits <= 0 &&
     (account!.plan === 'free' || account!.plan === 'demo')
   ) {
-    const updated = await client
-      .from<AccountRow>('accounts')
-      .update({ apply_credits: PLAN_CREDITS, plan: 'demo' })
-      .eq('user_id', userId);
+    const updated = await writeAccount(client, account!, { apply_credits: PLAN_CREDITS, plan: 'demo' });
     if (!updated.error) {
       account = { ...account!, apply_credits: PLAN_CREDITS, plan: 'demo' };
       log('demo_credits_granted', { user_id: userId, apply_credits: PLAN_CREDITS });
@@ -210,10 +224,10 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
         ? (sub.plan_name ?? sub.planName ?? sub.plan_id ?? 'subscribed')
         : null;
     if (activePlan && account!.plan !== activePlan) {
-      const updated = await client
-        .from<AccountRow>('accounts')
-        .update({ plan: activePlan, apply_credits: account!.apply_credits + PLAN_CREDITS })
-        .eq('user_id', userId);
+      const updated = await writeAccount(client, account!, {
+        plan: activePlan,
+        apply_credits: account!.apply_credits + PLAN_CREDITS,
+      });
       if (!updated.error) {
         account = { ...account!, plan: activePlan, apply_credits: account!.apply_credits + PLAN_CREDITS };
         log('credits_granted', { user_id: userId, plan: activePlan, apply_credits: account.apply_credits });
@@ -454,19 +468,13 @@ export async function spendCredit(token: string): Promise<{ remaining: number }>
   if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
     const remaining = account.apply_credits - 1;
     const client = userClient(token);
-    const updated = await client
-      .from<AccountRow>('accounts')
-      .update({ apply_credits: remaining })
-      .eq('user_id', account.user_id);
+    const updated = await writeAccount(client, account, { apply_credits: remaining });
     log('demo_credit_spent', { user_id: account.user_id, remaining, persisted: !updated.error });
     return { remaining };
   }
 
   const client = userClient(token);
-  const updated = await client
-    .from<AccountRow>('accounts')
-    .update({ apply_credits: account.apply_credits - 1 })
-    .eq('user_id', account.user_id);
+  const updated = await writeAccount(client, account, { apply_credits: account.apply_credits - 1 });
   if (updated.error) throw new Error(`credit decrement failed: ${JSON.stringify(updated.error)}`);
   log('credit_spent', { user_id: account.user_id, remaining: account.apply_credits - 1 });
   return { remaining: account.apply_credits - 1 };
@@ -474,8 +482,8 @@ export async function spendCredit(token: string): Promise<{ remaining: number }>
 
 // Give a spent credit back — used to roll back when the ship (PR) fails after
 // the credit was already spent, so a GitHub error never silently burns a credit.
-// Mirrors spendCredit's modes: a no-op under unlimited, and synthetic (log-only)
-// under demo where accounts writes are blocked.
+// Mirrors spendCredit's modes: a no-op under unlimited, and id-based writes for
+// normal/demo accounts once the accounts table carries an `id` column.
 export async function refundCredit(token: string): Promise<void> {
   if (UNLIMITED_CREDITS) return;
   const account = await ensureAccount(token).catch(() => null);
@@ -483,18 +491,12 @@ export async function refundCredit(token: string): Promise<void> {
   if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
     const remaining = account.apply_credits + 1;
     const client = userClient(token);
-    const updated = await client
-      .from<AccountRow>('accounts')
-      .update({ apply_credits: remaining })
-      .eq('user_id', account.user_id);
+    const updated = await writeAccount(client, account, { apply_credits: remaining });
     log('demo_credit_refunded', { user_id: account.user_id, remaining, persisted: !updated.error });
     return;
   }
   const client = userClient(token);
-  const updated = await client
-    .from<AccountRow>('accounts')
-    .update({ apply_credits: account.apply_credits + 1 })
-    .eq('user_id', account.user_id);
+  const updated = await writeAccount(client, account, { apply_credits: account.apply_credits + 1 });
   if (updated.error) {
     log('credit_refund_failed', { user_id: account.user_id, error: updated.error });
     return;
