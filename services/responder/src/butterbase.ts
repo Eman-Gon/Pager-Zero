@@ -284,6 +284,7 @@ export async function latestDiagnoseCandidate(
 
   type ActionWithType = {
     type: string;
+    verified?: boolean;
     candidate_fix: StoredActionPayload | null;
     created_at?: string;
   };
@@ -294,6 +295,8 @@ export async function latestDiagnoseCandidate(
   const pick = async (type: string) => {
     for (const row of sorted) {
       if (row.type !== type) continue;
+      // Never re-serve a candidate that already failed sandbox verification.
+      if (type === 'remediate' && !row.verified) continue;
       const payload = row.candidate_fix;
       if (!payload) continue;
       const candidate = await materializeCandidate(payload, incident);
@@ -386,6 +389,21 @@ export async function createApproval(token: string, actionId: string): Promise<A
   return row;
 }
 
+// An existing pending approval for this action, if any — so a repeated /apply
+// on the same risky fix reuses the open approval instead of spawning duplicates
+// (each of which could otherwise be approved into its own PR + credit spend).
+export async function findPendingApproval(token: string, actionId: string): Promise<ApprovalRow | null> {
+  const client = userClient(token);
+  return ((
+    await client
+      .from<ApprovalRow>('approvals')
+      .select('*')
+      .eq('action_id', actionId)
+      .eq('status', 'pending')
+      .maybeSingle()
+  ).data ?? null) as ApprovalRow | null;
+}
+
 export async function getApproval(token: string, approvalId: string): Promise<ApprovalRow | null> {
   const client = userClient(token);
   return ((await client.from<ApprovalRow>('approvals').select('*').eq('id', approvalId).maybeSingle()).data ??
@@ -443,4 +461,28 @@ export async function spendCredit(token: string): Promise<{ remaining: number }>
   if (updated.error) throw new Error(`credit decrement failed: ${JSON.stringify(updated.error)}`);
   log('credit_spent', { user_id: account.user_id, remaining: account.apply_credits - 1 });
   return { remaining: account.apply_credits - 1 };
+}
+
+// Give a spent credit back — used to roll back when the ship (PR) fails after
+// the credit was already spent, so a GitHub error never silently burns a credit.
+// Mirrors spendCredit's modes: a no-op under unlimited, and synthetic (log-only)
+// under demo where accounts writes are blocked.
+export async function refundCredit(token: string): Promise<void> {
+  if (UNLIMITED_CREDITS) return;
+  const account = await ensureAccount(token).catch(() => null);
+  if (!account) return;
+  if (process.env.DEMO_AUTO_CREDITS === '1' && account.plan === 'demo') {
+    log('demo_credit_refunded', { user_id: account.user_id, remaining: account.apply_credits + 1 });
+    return;
+  }
+  const client = userClient(token);
+  const updated = await client
+    .from<AccountRow>('accounts')
+    .update({ apply_credits: account.apply_credits + 1 })
+    .eq('user_id', account.user_id);
+  if (updated.error) {
+    log('credit_refund_failed', { user_id: account.user_id, error: updated.error });
+    return;
+  }
+  log('credit_refunded', { user_id: account.user_id, remaining: account.apply_credits + 1 });
 }

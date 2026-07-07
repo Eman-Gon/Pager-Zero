@@ -40,6 +40,13 @@ stop_all() {
   stop_pid "$FRONTEND_PID"
   stop_pid "$RESPONDER_PID"
   stop_pid "$SENSOR_PID"
+  # The pidfiles hold the launcher pids; npm's node children can survive them.
+  # Sweep the service ports so a restart never races a half-dead process.
+  for port in 3003 3004 5173; do
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | while read -r pid; do
+      kill "$pid" 2>/dev/null || true
+    done
+  done
   echo "Stopped native dev services."
 }
 
