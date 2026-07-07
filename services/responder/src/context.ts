@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 import type { Driver } from 'neo4j-driver';
+import type { RunbookHit } from './runbooks.js';
 
 export interface Incident {
   status: 'ok' | 'incident';
@@ -37,6 +38,7 @@ export async function assembleContext(
   driver: Driver,
   targetDir: string,
   incident: Incident,
+  runbooks: RunbookHit[] | null = null,
 ): Promise<string> {
   const parts: string[] = [
     '## Incident',
@@ -66,6 +68,16 @@ export async function assembleContext(
 
   for (const testFile of incident.failing_tests) {
     parts.push(`## Failing test (${testFile})`, '```typescript', await readSnippet(targetDir, testFile), '```');
+  }
+
+  if (runbooks?.length) {
+    parts.push(
+      '## Retrieved runbooks (cite the one you rely on by its exact title in cited_runbook)',
+      ...runbooks.map(
+        (rb) =>
+          `### ${rb.title}${rb.applies ? ` (linked to \`${incident.root_cause}\` in the code graph)` : ''}\n${rb.text}`,
+      ),
+    );
   }
 
   return parts.join('\n');

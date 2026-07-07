@@ -1,8 +1,9 @@
 import Fastify from 'fastify';
 import neo4j, { type Driver } from 'neo4j-driver';
-import { assembleContext, type Incident } from './context.js';
+import { assembleContext, functionFile, type Incident } from './context.js';
 import { log } from './log.js';
 import { DiagnosisPipeline } from './pipeline.js';
+import { ensureRunbookSubstrate, retrieveRunbooks } from './runbooks.js';
 
 const NEO4J_URL = process.env.NEO4J_URL ?? 'bolt://localhost:7687';
 const NEO4J_USER = process.env.NEO4J_USER ?? 'neo4j';
@@ -29,6 +30,10 @@ async function connectWithRetry(): Promise<Driver> {
 const driver = await connectWithRetry();
 const pipeline = new DiagnosisPipeline();
 
+// Best-effort at startup; repeated per /diagnose because the sensor may not
+// have written the Function nodes yet when the responder first boots.
+await ensureRunbookSubstrate(driver).catch((err) => log('runbook_seed_error', { error: String(err) }));
+
 const app = Fastify();
 
 app.get('/connection', async () => {
@@ -52,7 +57,18 @@ app.post('/diagnose', async (request, reply) => {
   if (incident.status === 'ok') return { status: 'ok' };
 
   log('diagnose_start', { root_cause: incident.root_cause, failing_tests: incident.failing_tests });
-  const context = await assembleContext(driver, TARGET_DIR, incident);
+
+  let runbooks = null;
+  if (incident.root_cause) {
+    await ensureRunbookSubstrate(driver);
+    const file = await functionFile(driver, incident.root_cause);
+    const query = `Function ${incident.root_cause} (${file ?? 'unknown file'}) was changed in a recent commit and these tests now fail: ${incident.failing_tests.join(', ')}. Downstream affected: ${incident.blast_radius.join(', ')}.`;
+    runbooks = await retrieveRunbooks(driver, query, incident.root_cause);
+    if (runbooks) log('runbooks_retrieved', { hits: runbooks.map((r) => ({ title: r.title, applies: r.applies, score: r.score })) });
+    else log('runbooks_flagged', { reason: 'Nebius not configured — diagnosing without runbooks' });
+  }
+
+  const context = await assembleContext(driver, TARGET_DIR, incident, runbooks);
   log('context_assembled', { chars: context.length });
   const diagnosis = await pipeline.diagnose(context);
   log('diagnose_done', { severity: diagnosis.severity, cited_runbook: diagnosis.cited_runbook });
