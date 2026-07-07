@@ -75,15 +75,26 @@ export async function fetchHealth(): Promise<HealthStatus> {
 }
 
 async function responderPost(path: string, token: string, body?: unknown): Promise<{ status: number; data: any }> {
-  const res = await fetch(`${RESPONDER}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  return { status: res.status, data: await res.json() };
+  let res: Response;
+  try {
+    res = await fetch(`${RESPONDER}${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+      },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      msg === 'Load failed' || msg === 'Failed to fetch'
+        ? 'responder unreachable or timed out — check ./scripts/dev-native.sh status and retry'
+        : msg,
+    );
+  }
+  const data = await res.json().catch(() => ({}));
+  return { status: res.status, data };
 }
 
 export const diagnose = (token: string) => responderPost('/diagnose', token);

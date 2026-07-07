@@ -14,6 +14,7 @@ import {
   createApproval,
   ensureAccount,
   getApproval,
+  latestDiagnoseCandidate,
   latestVerifiedAction,
   markApplied,
   recordIncidentAction,
@@ -306,15 +307,29 @@ app.post('/remediate', async (request, reply) => {
     candidates = [body!.candidate_fix!];
     log('remediate_override', { path: candidates[0].path });
   } else {
-    const n = Math.min(Math.max(Number(body?.candidates) || 1, 1), 5);
-    const out = await runDiagnosis(n);
-    if (out.status === 'ok') return { status: 'ok' };
-    diagnosis = out.diagnosis;
-    candidates = (n > 1 && diagnosis.candidate_fixes?.every(isFix) ? diagnosis.candidate_fixes : [diagnosis.candidate_fix])
-      .filter(isFix);
-    if (!candidates.length) {
-      reply.code(502);
-      return { error: 'pipeline returned no candidate_fix' };
+    const cached = token ? await latestDiagnoseCandidate(token).catch((err) => {
+      log('remediate_cache_error', { error: String(err) });
+      return null;
+    }) : null;
+    if (cached) {
+      candidates = [cached.candidate];
+      diagnosis = cached.diagnosis;
+      log('remediate_cached_candidate', { path: cached.candidate.path });
+    } else {
+      log('remediate_cache_miss', { hint: 'no persisted diagnose candidate — will call RocketRide' });
+      // Candidate cap is configurable (default generous); each candidate is an
+      // LLM call + sandbox verify, so keep a sane upper bound rather than truly ∞.
+      const MAX_CANDIDATES = Math.max(Number(process.env.MAX_CANDIDATES ?? 25), 1);
+      const n = Math.min(Math.max(Number(body?.candidates) || 1, 1), MAX_CANDIDATES);
+      const out = await runDiagnosis(n);
+      if (out.status === 'ok') return { status: 'ok' };
+      diagnosis = out.diagnosis;
+      candidates = (n > 1 && diagnosis.candidate_fixes?.every(isFix) ? diagnosis.candidate_fixes : [diagnosis.candidate_fix])
+        .filter(isFix);
+      if (!candidates.length) {
+        reply.code(502);
+        return { error: 'pipeline returned no candidate_fix' };
+      }
     }
   }
 

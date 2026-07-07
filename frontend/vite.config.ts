@@ -18,7 +18,13 @@ export default defineConfig({
   server: {
     proxy: {
       '/sensor': { target: 'http://localhost:3003', rewrite: (p) => p.replace(/^\/sensor/, '') },
-      '/responder': { target: 'http://localhost:3004', rewrite: (p) => p.replace(/^\/responder/, '') },
+      '/responder': {
+        target: 'http://localhost:3004',
+        rewrite: (p) => p.replace(/^\/responder/, ''),
+        // Daytona sandbox verify can take a few minutes.
+        timeout: 300_000,
+        proxyTimeout: 300_000,
+      },
     },
   },
 });

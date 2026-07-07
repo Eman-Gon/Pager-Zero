@@ -126,16 +126,19 @@ install_if_needed() {
 start_bg() {
   local name=$1 pidfile=$2 logfile=$3 workdir=$4 port=$5
   mkdir -p "$PID_DIR"
-  (
-    cd "$workdir"
-    export PORT="$port"
-    # shellcheck disable=SC1091
-    [[ -f "$ROOT/.env" ]] && set -a && source "$ROOT/.env" && set +a
-    export TARGET_DIR="$TARGET"
-    export SENSOR_URL="${SENSOR_URL:-http://localhost:3003}"
+  # nohup so sensor/responder survive when this script's shell exits (e.g. CI/agents).
+  nohup bash -c "
+    cd $(printf '%q' "$workdir")
+    set -a
+    source $(printf '%q' "$ROOT/.env")
+    set +a
+    export TARGET_DIR=$(printf '%q' "$TARGET")
+    export SENSOR_URL=${SENSOR_URL:-http://localhost:3003}
+    export PORT=$port
     exec npm start
-  ) >"$logfile" 2>&1 &
+  " >"$logfile" 2>&1 &
   echo $! >"$pidfile"
+  disown "$(cat "$pidfile")" 2>/dev/null || true
   echo "Started $name on :$port (pid $(cat "$pidfile"), log $logfile)"
 }
 
@@ -189,6 +192,7 @@ start_all() {
       exec npm run dev -- --host 127.0.0.1 --port 5173
     ) >"$FRONTEND_LOG" 2>&1 &
     echo $! >"$FRONTEND_PID"
+    disown "$(cat "$FRONTEND_PID")" 2>/dev/null || true
     echo "Started frontend on :5173 (pid $(cat "$FRONTEND_PID"), log $FRONTEND_LOG)"
     sleep 2
   fi

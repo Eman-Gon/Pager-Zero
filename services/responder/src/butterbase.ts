@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import path from 'node:path';
 import { createClient, type ButterbaseClient } from '@butterbase/sdk';
 import { log } from './log.js';
 import type { CandidateFix, Diagnosis } from './pipeline.js';
@@ -7,6 +9,10 @@ const APP_ID = process.env.BUTTERBASE_APP_ID ?? '';
 const API_URL = process.env.BUTTERBASE_API_URL ?? 'https://api.butterbase.ai';
 // Credits granted per active subscription cycle of the plan (M5 Phase 2).
 const PLAN_CREDITS = Number(process.env.BUTTERBASE_PLAN_CREDITS ?? 5);
+// Unlimited mode: bypass the paywall entirely so applies/ships never get
+// blocked (local + demo). Surface a large, JSON-safe balance for the UI.
+const UNLIMITED_CREDITS = process.env.UNLIMITED_CREDITS === '1';
+const UNLIMITED_BALANCE = 999_999;
 
 export function butterbaseConfigured(): boolean {
   return Boolean(APP_ID);
@@ -155,6 +161,11 @@ export async function ensureAccount(token: string): Promise<AccountRow> {
     account = Array.isArray(created.data) ? created.data[0] : created.data;
   }
 
+  // Unlimited mode: skip the paywall (demo + subscription) sync entirely.
+  if (UNLIMITED_CREDITS) {
+    return { ...account!, apply_credits: UNLIMITED_BALANCE, plan: 'unlimited' };
+  }
+
   // Demo mode: grant credits without Stripe so Mission Control can ship end-to-end.
   if (
     process.env.DEMO_AUTO_CREDITS === '1' &&
@@ -214,6 +225,85 @@ export interface StoredIncidentRow {
   opened_at: string;
   severity: string | null;
   blast_radius: { functions?: string[] } | null;
+}
+
+// Latest diagnose (or remediate) candidate for /remediate without re-running RocketRide.
+async function materializeCandidate(
+  payload: StoredActionPayload,
+  incident: StoredIncidentRow,
+): Promise<CandidateFix | null> {
+  const filePath =
+    payload.path ||
+    (incident.root_cause === 'computeTax' ? 'src/tax.ts' : '');
+  if (!filePath) return null;
+
+  let content = payload.content?.trim() ? payload.content : '';
+  const targetDir = process.env.TARGET_DIR ?? '';
+  if (!content && targetDir) {
+    try {
+      content = await readFile(path.join(targetDir, filePath), 'utf8');
+      const approach = payload.trace?.proposed_fix_approach ?? '';
+      if (/multiplic/i.test(approach) && content.includes('amount + rate')) {
+        content = content.replace('amount + rate', 'amount * rate');
+      }
+    } catch {
+      return null;
+    }
+  }
+  if (!content.trim()) return null;
+  return { path: filePath, content };
+}
+
+export async function latestDiagnoseCandidate(
+  token: string,
+): Promise<{ candidate: CandidateFix; diagnosis: Diagnosis } | null> {
+  const client = userClient(token);
+  const openIncidents = (
+    (await client.from<StoredIncidentRow>('incidents').select('*').eq('status', 'open')).data ?? []
+  ) as StoredIncidentRow[];
+  const incident = [...openIncidents].sort((a, b) =>
+    String(b.opened_at ?? '').localeCompare(String(a.opened_at ?? '')),
+  )[0];
+  if (!incident) return null;
+
+  type ActionWithType = {
+    type: string;
+    candidate_fix: StoredActionPayload | null;
+    created_at?: string;
+  };
+  const rows = ((await client.from<ActionWithType>('actions').select('*').eq('incident_id', incident.id))
+    .data ?? []) as ActionWithType[];
+  const sorted = [...rows].sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
+
+  const pick = async (type: string) => {
+    for (const row of sorted) {
+      if (row.type !== type) continue;
+      const payload = row.candidate_fix;
+      if (!payload) continue;
+      const candidate = await materializeCandidate(payload, incident);
+      if (!candidate) continue;
+      const diagnosis: Diagnosis =
+        type === 'diagnose' && payload.trace
+          ? {
+              severity: payload.trace.severity,
+              root_cause_explanation: payload.trace.root_cause_explanation,
+              proposed_fix_approach: payload.trace.proposed_fix_approach,
+              cited_runbook: payload.trace.cited_runbook,
+              candidate_fix: candidate,
+            }
+          : {
+              severity: (incident.severity as Diagnosis['severity']) ?? 'high',
+              root_cause_explanation: '',
+              proposed_fix_approach: '',
+              cited_runbook: null,
+              candidate_fix: candidate,
+            };
+      return { candidate, diagnosis };
+    }
+    return null;
+  };
+
+  return (await pick('remediate')) ?? (await pick('diagnose'));
 }
 
 // The latest verified-but-unapplied fix for the user's open incident (M6).
@@ -315,6 +405,11 @@ export async function actionWithIncident(
 // The load-bearing paywall: no credits → PaywallError; else decrement by 1.
 export async function spendCredit(token: string): Promise<{ remaining: number }> {
   const account = await ensureAccount(token);
+  // Unlimited mode: never paywall, never decrement — infinite applies.
+  if (UNLIMITED_CREDITS) {
+    log('credit_spend_unlimited', { user_id: account.user_id });
+    return { remaining: account.apply_credits };
+  }
   if (account.apply_credits <= 0) throw new PaywallError();
 
   // Demo mode: credits may be synthetic if Butterbase accounts writes are blocked.

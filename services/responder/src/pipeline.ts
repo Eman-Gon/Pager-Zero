@@ -122,9 +122,9 @@ export class DiagnosisPipeline {
       auth: process.env.ROCKETRIDE_APIKEY,
       uri: process.env.ROCKETRIDE_URI ?? 'https://api.rocketride.ai',
       requestTimeout: 120_000,
-      // Long-lived responder: reconnect if RocketRide Cloud drops the WebSocket.
-      persist: true,
-      maxRetryTime: 300_000,
+      // Connect on demand (/diagnose) — avoid background reconnect storms when Cloud is flaky.
+      persist: false,
+      maxRetryTime: 60_000,
       onDisconnected: async (reason, hasError) => {
         log('rocketride_disconnected', { reason, hasError });
       },

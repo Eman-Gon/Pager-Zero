@@ -16,7 +16,7 @@ function sandboxFromAction(row: ActionRow | null): RemediateResult | null {
   if (!sandbox?.test_output && !row.verified) return null;
   return {
     verified: row.verified,
-    test_output: sandbox?.test_output ?? '(verified ó re-run remediate to refresh output)',
+    test_output: sandbox?.test_output ?? '(verified - re-run remediate to refresh output)',
     results: sandbox?.results,
   };
 }
@@ -62,9 +62,14 @@ export default function SandboxPanel({
       const { status, data } = await remediate(token);
       if (status !== 200) throw new Error(data.error ?? `HTTP ${status}`);
       if (data.status === 'ok') {
-        setError('no incident ù nothing to remediate');
+        setError('no incident - nothing to remediate');
       } else {
-        setResult(data);
+        setResult({
+          verified: data.verified,
+          test_output: data.test_output ?? '',
+          selected: data.selected,
+          results: data.results,
+        });
         onChanged();
       }
     } catch (err) {
@@ -78,11 +83,11 @@ export default function SandboxPanel({
     <div>
       <div className="row">
         <button disabled={busy || incident?.status !== 'incident'} onClick={run}>
-          {busy ? 'Verifying in Daytonaù' : 'Remediate (verify in sandbox)'}
+          {busy ? 'Verifying in Daytona...' : 'Remediate (verify in sandbox)'}
         </button>
         {result && (
           <span className={result.verified ? 'sev-low' : 'sev-high'}>
-            {result.verified ? '? verified' : '? rejected'}
+            {result.verified ? 'verified' : 'rejected'}
           </span>
         )}
         {restored && result && <span className="muted">restored from Butterbase</span>}
@@ -93,7 +98,7 @@ export default function SandboxPanel({
           <b>candidates</b>
           {result.results.map((r) => (
             <span key={r.candidate_index} className={r.verified ? 'sev-low' : 'sev-high'} style={{ marginRight: 8 }}>
-              #{r.candidate_index} {r.verified ? '?' : '?'}
+              #{r.candidate_index} {r.verified ? 'pass' : 'fail'}
             </span>
           ))}
         </div>
