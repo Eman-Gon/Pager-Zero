@@ -119,7 +119,7 @@ app.get('/account', async (request, reply) => {
 // The M3 flow: incident from the sensor → runbook retrieval → context →
 // Cloud pipeline. Shared by /diagnose (M3) and /remediate (M4).
 async function runDiagnosis(candidates = 1): Promise<
-  { status: 'ok' } | { status: 'incident'; incident: Incident; diagnosis: Diagnosis }
+  { status: 'ok' } | { status: 'incident'; incident: Incident; diagnosis: Diagnosis; pipeline?: string }
 > {
   const res = await fetch(`${SENSOR_URL}/incident`);
   if (!res.ok) throw new Error(`sensor /incident returned ${res.status}`);
@@ -162,9 +162,10 @@ async function runDiagnosis(candidates = 1): Promise<
   }
   log('context_assembled', { chars: context.length });
   const diagnosis = await pipeline.diagnose(context);
-  log('diagnose_done', { severity: diagnosis.severity, cited_runbook: diagnosis.cited_runbook });
+  const pipelineKind = pipeline.connectionInfo().pipeline;
+  log('diagnose_done', { severity: diagnosis.severity, cited_runbook: diagnosis.cited_runbook, pipeline: pipelineKind });
 
-  return { status: 'incident', incident, diagnosis };
+  return { status: 'incident', incident, diagnosis, pipeline: pipelineKind };
 }
 
 // M5: Butterbase persistence is keyed to the signed-in user's JWT. When the

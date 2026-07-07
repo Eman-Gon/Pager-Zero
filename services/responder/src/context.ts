@@ -71,6 +71,25 @@ export async function assembleContext(
     parts.push(`## Failing test (${testFile})`, '```typescript', await readSnippet(targetDir, testFile), '```');
   }
 
+  // Downstream callers in blast_radius — helps the agent see how the bug propagates.
+  const seenFiles = new Set<string>();
+  if (incident.root_cause) {
+    const rootFile = await functionFile(driver, incident.root_cause);
+    if (rootFile) seenFiles.add(rootFile);
+  }
+  for (const fn of incident.blast_radius.slice(0, 6)) {
+    if (fn === incident.root_cause) continue;
+    const file = await functionFile(driver, fn);
+    if (!file || seenFiles.has(file)) continue;
+    seenFiles.add(file);
+    parts.push(
+      `## Blast-radius function (${fn} in ${file})`,
+      '```typescript',
+      await readSnippet(targetDir, file),
+      '```',
+    );
+  }
+
   if (runbooks?.length) {
     parts.push(
       '## Retrieved runbooks (cite the one you rely on by its exact title in cited_runbook)',
