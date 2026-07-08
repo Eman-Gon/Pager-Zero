@@ -58,6 +58,20 @@ export async function fetchIncident(): Promise<Incident> {
   return res.json();
 }
 
+// Demo controls on the sensor: arm the patient's scripted incident / restore
+// the good tag, so the whole arc can be driven from the UI live.
+export async function injectIncident(): Promise<{ status: string }> {
+  const res = await fetch(`${SENSOR}/demo/break`, { method: 'POST' });
+  if (!res.ok) throw new Error(`break failed: sensor ${res.status}`);
+  return res.json();
+}
+
+export async function resetIncident(): Promise<{ status: string }> {
+  const res = await fetch(`${SENSOR}/demo/reset`, { method: 'POST' });
+  if (!res.ok) throw new Error(`reset failed: sensor ${res.status}`);
+  return res.json();
+}
+
 export interface HealthStatus {
   sensor: boolean;
   neo4j: boolean;

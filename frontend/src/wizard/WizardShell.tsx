@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchMissionSnapshot, type Incident, type MissionSnapshot } from '../api';
+import { fetchMissionSnapshot, injectIncident, resetIncident, type Incident, type MissionSnapshot } from '../api';
 import GraphPanel from '../panels/GraphPanel';
 import TracePanel from '../panels/TracePanel';
 import SandboxPanel from '../panels/SandboxPanel';
@@ -9,14 +9,38 @@ import { ResultBadge } from '../components/ActionProgress';
 import { STEPS, isStepComplete, type StepId } from './steps';
 
 function DetectStep({ incident }: { incident: Incident | null }) {
+  const [arming, setArming] = useState<'break' | 'reset' | null>(null);
+  const [demoErr, setDemoErr] = useState<string | null>(null);
+  // The sensor picks up the commit on its next ~2s poll; the App-level
+  // incident poller then flips the UI. Keep the spinner until it does.
+  useEffect(() => {
+    if (arming === 'break' && incident?.status === 'incident') setArming(null);
+    if (arming === 'reset' && incident?.status === 'ok') setArming(null);
+  }, [arming, incident?.status]);
+
+  const fire = async (kind: 'break' | 'reset') => {
+    setDemoErr(null);
+    setArming(kind);
+    try {
+      await (kind === 'break' ? injectIncident() : resetIncident());
+    } catch (err) {
+      setArming(null);
+      setDemoErr(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   if (incident?.status !== 'incident') {
     return (
       <div className="detect-clear">
         <ResultBadge kind="ok">all clear</ResultBadge>
         <p className="muted">
-          No active incident. The sensor is watching the target repo — break something (or run{' '}
-          <code>./scripts/break.sh</code>) to arm the pipeline.
+          No active incident. The sensor is watching the patient repo — inject the scripted
+          incident to arm the pipeline live.
         </p>
+        <button className="danger" disabled={arming !== null} onClick={() => fire('break')}>
+          {arming === 'break' ? 'breaking production…' : '💥 Break production'}
+        </button>
+        {demoErr && <p className="muted" style={{ color: 'var(--bad, #f2647f)' }}>{demoErr}</p>}
       </div>
     );
   }
@@ -25,6 +49,13 @@ function DetectStep({ incident }: { incident: Incident | null }) {
       <div className="detect-row">
         <span className="detect-label">status</span>
         <ResultBadge kind="bad">incident detected</ResultBadge>
+        <button
+          style={{ marginLeft: 'auto' }}
+          disabled={arming !== null}
+          onClick={() => fire('reset')}
+        >
+          {arming === 'reset' ? 'restoring…' : 'restore good state'}
+        </button>
       </div>
       <div className="detect-row">
         <span className="detect-label">root cause</span>

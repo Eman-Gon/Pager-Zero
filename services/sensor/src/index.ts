@@ -104,6 +104,60 @@ app.get('/incident', async () => {
   }
 });
 
+// Demo controls: inject the patient's known incident / restore the good tag,
+// so the whole break→detect→ship arc can be driven from the UI. Each patient
+// carries one scripted incident, keyed by which source file it has.
+const DEMO_BREAKS = [
+  {
+    file: 'src/riskScore.ts',
+    from: 'for (let i = 0; i < codes.length; i++) {',
+    to: 'for (let i = 0; i <= codes.length; i++) {',
+    message: 'incident: off-by-one loop boundary in sumRiskWeights inflates every risk score by 1',
+  },
+  {
+    file: 'src/tax.ts',
+    from: 'return amount * rate;',
+    to: 'return amount + rate;',
+    message: 'incident: bad tax calc',
+  },
+];
+
+app.post('/demo/break', async (_req, reply) => {
+  const { readFile: rf, writeFile: wf } = await import('node:fs/promises');
+  const { join } = await import('node:path');
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  for (const b of DEMO_BREAKS) {
+    const abs = join(TARGET_DIR, b.file);
+    let src: string;
+    try {
+      src = await rf(abs, 'utf8');
+    } catch {
+      continue; // not this patient
+    }
+    if (!src.includes(b.from)) {
+      // file exists but already broken (or diverged) — treat as already armed
+      log('demo_break_noop', { file: b.file });
+      return { status: 'already_broken', file: b.file };
+    }
+    await wf(abs, src.replace(b.from, b.to), 'utf8');
+    await run('git', ['-C', TARGET_DIR, 'commit', '-am', b.message]);
+    log('demo_break', { file: b.file });
+    return { status: 'broken', file: b.file };
+  }
+  return reply.code(422).send({ error: 'no scripted incident matches this patient' });
+});
+
+app.post('/demo/reset', async () => {
+  const { execFile } = await import('node:child_process');
+  const { promisify } = await import('node:util');
+  const run = promisify(execFile);
+  await run('git', ['-C', TARGET_DIR, 'reset', '--hard', 'good']);
+  log('demo_reset', {});
+  return { status: 'reset' };
+});
+
 await app.listen({ port: PORT, host: '0.0.0.0' });
 log('listening', { port: PORT });
 
