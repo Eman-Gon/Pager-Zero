@@ -1,4 +1,7 @@
 import { createClient, type ButterbaseClient } from '@butterbase/sdk';
+// Circular with auth.ts (it imports `butterbase` from here) — safe: both sides
+// only use the other's exports inside function bodies, never at module init.
+import { tokenExpired } from './auth';
 
 export const APP_ID = import.meta.env.VITE_BUTTERBASE_APP_ID ?? 'app_gsuwgmmbc74g';
 export const BB_API_URL = import.meta.env.VITE_BUTTERBASE_API_URL ?? 'https://api.butterbase.ai';
@@ -75,27 +78,56 @@ export async function fetchHealth(): Promise<HealthStatus> {
   return res.json();
 }
 
-async function responderPost(path: string, token: string, body?: unknown): Promise<{ status: number; data: any }> {
-  let res: Response;
-  try {
-    res = await fetch(`${RESPONDER}${path}`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(
-      msg === 'Load failed' || msg === 'Failed to fetch'
-        ? 'responder unreachable or timed out — check ./scripts/dev-native.sh status and retry'
-        : msg,
-    );
+// Butterbase access tokens are short-lived: a tab left open past `exp` used to
+// fail every action with 500s until a manual reload. App.tsx registers a
+// refresher (demo re-sign-in, or sign-out to the auth card); calls below renew
+// proactively on a stale token and retry once on a 401.
+let refreshSession: (() => Promise<string | null>) | null = null;
+export function setSessionRefresher(fn: (() => Promise<string | null>) | null) {
+  refreshSession = fn;
+}
+
+async function freshToken(token: string): Promise<string> {
+  if (refreshSession && tokenExpired(token)) {
+    const renewed = await refreshSession();
+    if (renewed) return renewed;
   }
-  const data = await res.json().catch(() => ({}));
-  return { status: res.status, data };
+  return token;
+}
+
+async function retryOn401<T extends { status: number }>(
+  token: string,
+  call: (t: string) => Promise<T>,
+): Promise<T> {
+  const first = await call(await freshToken(token));
+  if (first.status !== 401 || !refreshSession) return first;
+  const renewed = await refreshSession();
+  return renewed ? call(renewed) : first;
+}
+
+async function responderPost(path: string, token: string, body?: unknown): Promise<{ status: number; data: any }> {
+  return retryOn401(token, async (t) => {
+    let res: Response;
+    try {
+      res = await fetch(`${RESPONDER}${path}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${t}`,
+          ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        msg === 'Load failed' || msg === 'Failed to fetch'
+          ? 'responder unreachable or timed out — check ./scripts/dev-native.sh status and retry'
+          : msg,
+      );
+    }
+    const data = await res.json().catch(() => ({}));
+    return { status: res.status, data };
+  });
 }
 
 export const diagnose = (token: string) => responderPost('/diagnose', token);
@@ -105,11 +137,14 @@ export const decideApproval = (token: string, id: string, decision: 'approved' |
   responderPost(`/approvals/${id}`, token, { decision });
 
 export async function syncAccount(token: string): Promise<AccountRow> {
-  const res = await fetch(`${RESPONDER}/account`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const { status, data } = await retryOn401(token, async (t) => {
+    const res = await fetch(`${RESPONDER}/account`, {
+      headers: { Authorization: `Bearer ${t}` },
+    });
+    return { status: res.status, data: res.ok ? await res.json() : null };
   });
-  if (!res.ok) throw new Error(`account sync ${res.status}`);
-  return res.json();
+  if (!data) throw new Error(`account sync ${status}`);
+  return data as AccountRow;
 }
 
 // Latest persisted diagnose/remediate rows for the user's open incident.

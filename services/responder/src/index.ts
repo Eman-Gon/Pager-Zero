@@ -525,8 +525,12 @@ app.post('/remediate', async (request, reply) => {
 });
 
 app.setErrorHandler((error, _request, reply) => {
-  log('request_error', { error: String(error) });
-  reply.code(500).send({ error: String(error) });
+  const msg = String(error);
+  // Butterbase rejects expired/invalid end-user JWTs with 401; surface that as
+  // 401 (not 500) so the frontend re-authenticates instead of showing a crash.
+  const authFailed = msg.includes('AUTH_END_USER_JWT_EXPIRED') || msg.includes('"name":"AuthError"');
+  log('request_error', { error: msg, auth_failed: authFailed });
+  reply.code(authFailed ? 401 : 500).send({ error: msg });
 });
 
 await app.listen({ port: PORT, host: '0.0.0.0' });

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
-import { fetchIncident, type Incident } from './api';
+import { fetchIncident, setSessionRefresher, type Incident } from './api';
 import {
+  clearSession,
   DEMO_EMAIL,
   emailsMatch,
   friendlyAuthError,
@@ -203,6 +204,29 @@ export default function App() {
   const [incident, setIncident] = useState<Incident | null>(null);
   const [tick, setTick] = useState(0);
   const bump = useCallback(() => setTick((t) => t + 1), []);
+
+  // Session renewal for tabs left open past token expiry: demo sessions
+  // silently re-sign-in; real users are sent back to the auth card.
+  useEffect(() => {
+    setSessionRefresher(async () => {
+      const isDemo = AUTO_LOGIN || email.includes(DEMO_EMAIL);
+      if (isDemo) {
+        try {
+          const t = await signInDemo();
+          saveSession(t, `${DEMO_EMAIL} (demo)`);
+          setToken(t);
+          setEmail(`${DEMO_EMAIL} (demo)`);
+          return t;
+        } catch {
+          /* fall through to sign-out */
+        }
+      }
+      clearSession();
+      setToken(null);
+      return null;
+    });
+    return () => setSessionRefresher(null);
+  }, [email]);
 
   useEffect(() => {
     let alive = true;
