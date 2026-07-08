@@ -120,6 +120,36 @@ const DEMO_BREAKS = [
     to: 'return amount + rate;',
     message: 'incident: bad tax calc',
   },
+  {
+    file: 'src/invoice.ts',
+    from: 'return amount * rate;',
+    to: 'return amount + rate;',
+    message: 'incident: wrong operator in computeTax adds rate instead of multiplying, wrecking every invoice total',
+  },
+  {
+    file: 'src/pricing.ts',
+    from: 'return price * (1 - pct / 100);',
+    to: 'return price * (1 - pct);',
+    message: 'incident: applyDiscount treats a 20% discount as a fraction, driving cart totals negative',
+  },
+  {
+    file: 'src/coverage.ts',
+    from: 'return age >= 18;',
+    to: 'return age > 18;',
+    message: 'incident: off-by-one age boundary in meetsAgeRequirement rejects eligible 18-year-olds',
+  },
+  {
+    file: 'src/normalize.ts',
+    from: 'return email.trim().toLowerCase();',
+    to: 'return email.trim();',
+    message: 'incident: normalizeEmail drops case-folding, so account lookup becomes case-sensitive',
+  },
+  {
+    file: 'src/threshold.ts',
+    from: 'return Number.isFinite(Number(raw)) ? Number(raw) : 50;',
+    to: 'return Number(raw);',
+    message: 'incident: parseThreshold lost its NaN guard, so risky claims never get flagged for review',
+  },
 ];
 
 app.post('/demo/break', async (_req, reply) => {
