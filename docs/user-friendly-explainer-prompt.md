@@ -31,5 +31,3 @@ Rules:
 Context:
 RescueOps++ is an autonomous incident-response demo. The sensor finds code/test failures, Neo4j stores the code graph and runbook memory, the responder diagnoses and verifies fixes, and the web dashboard shows incident status from detection through shipped fix.
 ```
-*** End Patch
- 

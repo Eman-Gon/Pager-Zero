@@ -1,6 +1,7 @@
 'use client';
 
 import * as React from 'react';
+import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import {
   Activity,
@@ -29,6 +30,7 @@ import { incidents, statusLabels } from '@/lib/mock-data';
 export function CommandMenu() {
   const [open, setOpen] = React.useState(false);
   const { setTheme, resolvedTheme } = useTheme();
+  const router = useRouter();
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -41,13 +43,13 @@ export function CommandMenu() {
     return () => document.removeEventListener('keydown', onKey);
   }, []);
 
-  const go = React.useCallback((hash: string) => {
-    setOpen(false);
-    // Defer so the dialog closes before we scroll.
-    requestAnimationFrame(() => {
-      document.getElementById(hash)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  }, []);
+  const go = React.useCallback(
+    (path: string) => {
+      setOpen(false);
+      router.push(path);
+    },
+    [router],
+  );
 
   return (
     <CommandDialog open={open} onOpenChange={setOpen}>
@@ -55,23 +57,23 @@ export function CommandMenu() {
       <CommandList>
         <CommandEmpty>No results found.</CommandEmpty>
         <CommandGroup heading="Navigation">
-          <CommandItem onSelect={() => go('overview')}>
+          <CommandItem onSelect={() => go('/')}>
             <LayoutDashboard />
             Overview
           </CommandItem>
-          <CommandItem onSelect={() => go('incidents')}>
+          <CommandItem onSelect={() => go('/incidents')}>
             <Siren />
             Incident queue
           </CommandItem>
-          <CommandItem onSelect={() => go('trends')}>
+          <CommandItem onSelect={() => go('/trends')}>
             <Activity />
             Trends &amp; MTTR
           </CommandItem>
-          <CommandItem onSelect={() => go('neo4j')}>
+          <CommandItem onSelect={() => go('/neo4j')}>
             <Database />
             Neo4j nodes
           </CommandItem>
-          <CommandItem onSelect={() => go('runbooks')}>
+          <CommandItem onSelect={() => go('/runbooks')}>
             <ScrollText />
             Runbook memory
           </CommandItem>
@@ -81,7 +83,7 @@ export function CommandMenu() {
           {incidents
             .filter((i) => i.status !== 'resolved')
             .map((i) => (
-              <CommandItem key={i.id} value={`${i.id} ${i.rootCause}`} onSelect={() => go('incidents')}>
+              <CommandItem key={i.id} value={`${i.id} ${i.rootCause}`} onSelect={() => go('/incidents')}>
                 {i.source === 'pagerduty' ? <Siren /> : i.source === 'sentry' ? <GitPullRequest /> : <ShieldCheck />}
                 <span className="font-medium">{i.id}</span>
                 <span className="text-muted-foreground">{i.rootCause}</span>

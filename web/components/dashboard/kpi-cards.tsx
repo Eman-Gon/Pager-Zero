@@ -12,6 +12,12 @@ interface Kpi {
   delta: string;
   trend: 'up' | 'down';
   good: boolean;
+  tone: {
+    border: string;
+    stripe: string;
+    icon: string;
+    delta: string;
+  };
 }
 
 const cards: Kpi[] = [
@@ -23,6 +29,12 @@ const cards: Kpi[] = [
     delta: '2 triaging',
     trend: 'down',
     good: true,
+    tone: {
+      border: 'border-rose-500/25 hover:border-rose-500/45',
+      stripe: 'bg-rose-500',
+      icon: 'border-rose-500/25 bg-rose-500/10 text-rose-700 dark:text-rose-200',
+      delta: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+    },
   },
   {
     label: 'Auto-resolve rate',
@@ -32,6 +44,12 @@ const cards: Kpi[] = [
     delta: '+6pt vs. last wk',
     trend: 'up',
     good: true,
+    tone: {
+      border: 'border-cyan-500/25 hover:border-cyan-500/45',
+      stripe: 'bg-cyan-500',
+      icon: 'border-cyan-500/25 bg-cyan-500/10 text-cyan-700 dark:text-cyan-200',
+      delta: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+    },
   },
   {
     label: 'Median MTTR',
@@ -41,6 +59,12 @@ const cards: Kpi[] = [
     delta: '−18% vs. last wk',
     trend: 'down',
     good: true,
+    tone: {
+      border: 'border-amber-500/25 hover:border-amber-500/45',
+      stripe: 'bg-amber-500',
+      icon: 'border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-200',
+      delta: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+    },
   },
   {
     label: 'PRs shipped (7d)',
@@ -50,6 +74,12 @@ const cards: Kpi[] = [
     delta: '+4 vs. last wk',
     trend: 'up',
     good: true,
+    tone: {
+      border: 'border-violet-500/25 hover:border-violet-500/45',
+      stripe: 'bg-violet-500',
+      icon: 'border-violet-500/25 bg-violet-500/10 text-violet-700 dark:text-violet-200',
+      delta: 'border-emerald-500/25 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
+    },
   },
 ];
 
@@ -59,18 +89,21 @@ export function KpiCards() {
       {cards.map((k) => {
         const TrendIcon = k.trend === 'up' ? ArrowUpRight : ArrowDownRight;
         return (
-          <Card key={k.label} className="hover:border-ring/30">
-            <CardContent className="p-5">
+          <Card key={k.label} className={cn('relative overflow-hidden', k.tone.border)}>
+            <span className={cn('absolute inset-x-0 top-0 h-1', k.tone.stripe)} />
+            <CardContent className="p-5 pt-6">
               <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">{k.label}</span>
-                <k.icon className="size-4 text-muted-foreground" />
+                <span className="text-sm font-medium text-muted-foreground">{k.label}</span>
+                <span className={cn('grid size-9 place-items-center rounded-lg border', k.tone.icon)}>
+                  <k.icon className="size-4" />
+                </span>
               </div>
-              <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{k.value}</div>
-              <p className="mt-1 min-h-10 text-xs leading-5 text-muted-foreground">{k.description}</p>
+              <div className="mt-3 text-3xl font-semibold tabular-nums">{k.value}</div>
+              <p className="mt-2 min-h-12 text-sm leading-6 text-muted-foreground">{k.description}</p>
               <div
                 className={cn(
-                  'mt-1 flex items-center gap-1 text-xs',
-                  k.good ? 'text-success' : 'text-destructive',
+                  'mt-3 inline-flex items-center gap-1 rounded-md border px-2 py-1 text-xs font-medium',
+                  k.good ? k.tone.delta : 'border-destructive/25 bg-destructive/10 text-destructive',
                 )}
               >
                 <TrendIcon className="size-3.5" />

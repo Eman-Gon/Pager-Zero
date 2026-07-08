@@ -179,7 +179,7 @@ export function Neo4jNodes() {
             <div className="overflow-x-auto scrollbar-thin">
               <table className="w-full min-w-[980px] text-sm">
                 <thead>
-                  <tr className="border-y text-left text-xs uppercase tracking-wide text-muted-foreground">
+                  <tr className="border-y text-left text-xs uppercase text-muted-foreground">
                     <th className="px-5 py-2.5 font-medium" title="The graph record name and Neo4j element ID.">Node</th>
                     <th className="px-3 py-2.5 font-medium" title="The type or types assigned to this node.">Labels</th>
                     <th className="px-3 py-2.5 font-medium" title="Incoming and outgoing relationship counts.">Degree</th>
@@ -215,7 +215,7 @@ export function Neo4jNodes() {
                             {properties.length ? (
                               properties.slice(0, 8).map(([key, value]) => (
                                 <div key={key} className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                                  <span className="break-words text-xs uppercase tracking-wide text-muted-foreground">{key}</span>
+                                  <span className="break-words text-xs uppercase text-muted-foreground">{key}</span>
                                   <code className="break-words text-xs text-muted-foreground">{compactValue(value)}</code>
                                 </div>
                               ))
@@ -255,7 +255,7 @@ function MetricCard({
     <Card>
       <CardContent className="p-5">
         <div className="text-sm text-muted-foreground">{label}</div>
-        <div className="mt-2 text-3xl font-semibold tracking-tight tabular-nums">{value}</div>
+        <div className="mt-2 text-3xl font-semibold tabular-nums">{value}</div>
         <p className="mt-1 min-h-10 text-xs leading-5 text-muted-foreground">{description}</p>
       </CardContent>
     </Card>

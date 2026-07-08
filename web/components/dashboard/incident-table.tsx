@@ -47,7 +47,7 @@ export function IncidentTable() {
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-y text-left text-xs uppercase tracking-wide text-muted-foreground">
+                <tr className="border-y text-left text-xs uppercase text-muted-foreground">
                   <th className="px-5 py-2.5 font-medium" title="Tracking ID for this problem.">Incident</th>
                   <th className="px-3 py-2.5 font-medium" title="Function the agent thinks caused the break.">Root cause</th>
                   <th className="px-3 py-2.5 font-medium" title="Business impact estimate.">Severity</th>

@@ -1,116 +1,128 @@
 import { Activity, CheckCircle2, Clock, Database, GitBranch, GitPullRequest, ScrollText, Siren } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 
 const journey = [
   {
     title: 'Detect',
     icon: Siren,
-    copy: 'The sensor or an alert source notices a break and opens an incident.',
+    copy: 'An alert opens an incident.',
+    tone: 'border-rose-500/40 bg-rose-500/10 text-rose-700 dark:text-rose-200',
   },
   {
     title: 'Diagnose',
     icon: GitBranch,
-    copy: 'The agent finds the likely root-cause function and the code paths affected by it.',
+    copy: 'The agent points to the likely broken function.',
+    tone: 'border-cyan-500/40 bg-cyan-500/10 text-cyan-700 dark:text-cyan-200',
   },
   {
     title: 'Verify',
     icon: CheckCircle2,
-    copy: 'The candidate fix is tested before the system treats it as safe to ship.',
+    copy: 'Tests check the candidate fix.',
+    tone: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-200',
   },
   {
     title: 'Ship',
     icon: GitPullRequest,
-    copy: 'A low-risk fix can become a pull request; risky changes wait for approval.',
+    copy: 'Safe fixes become PRs; risky ones wait.',
+    tone: 'border-violet-500/40 bg-violet-500/10 text-violet-700 dark:text-violet-200',
   },
 ];
 
 const glossary = [
   {
     term: 'Incident',
-    meaning: 'A live or recent problem the system is trying to explain and fix.',
+    meaning: 'Problem under response.',
   },
   {
     term: 'Root cause',
-    meaning: 'The function most likely responsible for the break.',
+    meaning: 'Likely broken function.',
   },
   {
     term: 'Blast radius',
-    meaning: 'Other functions, tests, or workflows that depend on the broken function.',
+    meaning: 'Code or tests affected.',
   },
   {
     term: 'MTTR',
-    meaning: 'Mean time to restore: how long it takes to get back to a healthy state.',
+    meaning: 'Time to restore service.',
   },
   {
     term: 'Neo4j',
-    meaning: 'The graph database that stores functions, tests, runbooks, and their links.',
+    meaning: 'Graph linking code, tests, and runbooks.',
   },
   {
     term: 'Runbook memory',
-    meaning: 'Reusable fix patterns the agent can cite when a similar issue appears again.',
+    meaning: 'Reusable fixes from past incidents.',
   },
 ];
 
 export function ExplainerGuide() {
   return (
-    <Card>
-      <CardHeader>
+    <Card className="overflow-hidden">
+      <CardHeader className="bg-accent/30">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="size-4" /> What am I looking at?
+          <div className="min-w-0">
+            <CardTitle className="flex items-center gap-3 text-base">
+              <span className="grid size-9 shrink-0 place-items-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
+                <Activity className="size-4" />
+              </span>
+              Response flow
             </CardTitle>
-            <CardDescription>
-              This page is the operator view for RescueOps++: it shows what broke, why it broke,
-              what the agent checked, and whether a fix is ready to ship.
+            <CardDescription className="mt-2 max-w-2xl leading-6">
+              What broke, why it broke, what was checked, and whether a fix is ready.
             </CardDescription>
           </div>
-          <Badge variant="secondary" className="w-fit">
+          <Badge variant="secondary" className="w-fit border border-primary/20 bg-primary/10 text-primary">
             Plain-English guide
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="grid gap-5 lg:grid-cols-[1.1fr_1fr]">
-        <div className="grid gap-3 sm:grid-cols-2">
+      <CardContent className="grid gap-6 lg:grid-cols-[1fr_0.95fr]">
+        <div className="grid gap-3">
           {journey.map((step) => (
-            <div key={step.title} className="rounded-lg border bg-background/50 p-3">
-              <div className="flex items-center gap-2 text-sm font-medium">
-                <step.icon className="size-4 text-muted-foreground" />
-                {step.title}
+            <div
+              key={step.title}
+              className="grid grid-cols-[auto_minmax(0,1fr)] gap-3 rounded-lg border border-border/80 bg-muted/20 p-4"
+            >
+              <span className={cn('grid size-9 place-items-center rounded-lg border', step.tone)}>
+                <step.icon className="size-4" />
+              </span>
+              <div className="min-w-0">
+                <div className="text-sm font-semibold">{step.title}</div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">{step.copy}</p>
               </div>
-              <p className="mt-1 text-xs leading-5 text-muted-foreground">{step.copy}</p>
             </div>
           ))}
         </div>
 
-        <div className="rounded-lg border bg-background/50 p-3">
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium">
-            <ScrollText className="size-4 text-muted-foreground" />
+        <div className="rounded-lg border border-border/80 bg-muted/20 p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
+            <ScrollText className="size-4 text-primary" />
             Key terms
           </div>
-          <dl className="grid gap-2 text-xs">
+          <dl className="divide-y divide-border/70 text-sm">
             {glossary.map((item) => (
-              <div key={item.term} className="grid gap-1 sm:grid-cols-[96px_minmax(0,1fr)]">
+              <div key={item.term} className="grid gap-1 py-3 first:pt-0 last:pb-0 sm:grid-cols-[128px_minmax(0,1fr)]">
                 <dt className="font-medium text-foreground">{item.term}</dt>
-                <dd className="leading-5 text-muted-foreground">{item.meaning}</dd>
+                <dd className="leading-6 text-muted-foreground">{item.meaning}</dd>
               </div>
             ))}
           </dl>
         </div>
       </CardContent>
-      <CardContent className="grid gap-3 border-t pt-5 text-xs text-muted-foreground sm:grid-cols-3">
-        <div className="flex gap-2">
-          <Database className="mt-0.5 size-4 shrink-0" />
-          Neo4j is the live map behind the dashboard.
+      <CardContent className="grid gap-3 border-t border-border/70 bg-muted/10 text-sm text-muted-foreground sm:grid-cols-3">
+        <div className="flex gap-2 rounded-lg border border-border/70 bg-card/60 p-3">
+          <Database className="mt-0.5 size-4 shrink-0 text-cyan-500" />
+          Graph map
         </div>
-        <div className="flex gap-2">
-          <Clock className="mt-0.5 size-4 shrink-0" />
-          Lower restore time means incidents are closing faster.
+        <div className="flex gap-2 rounded-lg border border-border/70 bg-card/60 p-3">
+          <Clock className="mt-0.5 size-4 shrink-0 text-amber-500" />
+          Restore speed
         </div>
-        <div className="flex gap-2">
-          <GitPullRequest className="mt-0.5 size-4 shrink-0" />
-          Pending approval means the agent found a fix but needs a human gate.
+        <div className="flex gap-2 rounded-lg border border-border/70 bg-card/60 p-3">
+          <GitPullRequest className="mt-0.5 size-4 shrink-0 text-violet-500" />
+          Approval gate
         </div>
       </CardContent>
     </Card>

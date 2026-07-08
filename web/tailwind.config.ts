@@ -80,9 +80,9 @@ const config: Config = {
           to: { opacity: '1', transform: 'translateY(0)' },
         },
         'pulse-ring': {
-          '0%': { boxShadow: '0 0 0 0 hsl(var(--destructive) / 0.5)' },
-          '70%': { boxShadow: '0 0 0 6px hsl(var(--destructive) / 0)' },
-          '100%': { boxShadow: '0 0 0 0 hsl(var(--destructive) / 0)' },
+          '0%': { boxShadow: '0 0 0 0 hsl(var(--success) / 0.45)' },
+          '70%': { boxShadow: '0 0 0 6px hsl(var(--success) / 0)' },
+          '100%': { boxShadow: '0 0 0 0 hsl(var(--success) / 0)' },
         },
       },
       animation: {
