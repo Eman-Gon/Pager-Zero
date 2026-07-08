@@ -107,9 +107,15 @@ export default function GraphPanel({ incident }: { incident: Incident | null }) 
         const inBlast = blast.has(n.id);
         const color = isRoot ? COLOR.root : inBlast ? COLOR.blast : n.kind === 'test' ? COLOR.test : COLOR.fn;
         const size = isRoot ? 42 : inBlast ? 30 : n.kind === 'test' ? 18 : 24;
+        const role = isRoot ? '▲ ROOT CAUSE' : inBlast ? 'blast radius' : n.kind === 'test' ? 'test file' : 'function';
         return {
           id: n.id,
-          caption: short(n.id),
+          // Two caption lines (canvas renderer): the symbol name, then its role
+          // in the incident — so every node is readable without hovering.
+          captions: [
+            { value: short(n.id), styles: isRoot || inBlast ? ['bold'] : [] },
+            { value: role, styles: ['italic'] },
+          ],
           color,
           size,
           captionAlign: 'bottom',
