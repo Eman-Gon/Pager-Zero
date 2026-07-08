@@ -1,18 +1,16 @@
 # target-repo is its own self-contained git repo — not tracked by this outer repo
 target-repo/
+.DS_Store
 node_modules/
 .env
 .dev/
 frontend/.env.local
-.rocketride/*
-!.rocketride/docs/
-!.rocketride/docs/**
 .butterbase/*
 !.butterbase/docs/
 !.butterbase/docs/**
 .neo4j/*
 !.neo4j/docs/
 !.neo4j/docs/**
-.rocketride/
 frontend/tsconfig.tsbuildinfo
 __pycache__/
+.rocketride/

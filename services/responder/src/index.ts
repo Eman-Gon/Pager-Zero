@@ -3,7 +3,7 @@ import type { Driver } from 'neo4j-driver';
 import { assembleContext, functionFile, type Incident } from './context.js';
 import { log } from './log.js';
 import { createDriver } from './neo4j-config.js';
-import { DiagnosisPipeline, type CandidateFix, type Diagnosis, rocketrideConfigured } from './pipeline.js';
+import { DiagnosisPipeline, type CandidateFix, type Diagnosis, llmConfigured } from './pipeline.js';
 import { ensureRunbookSubstrate, retrieveRunbooks, runbookDocs } from './runbooks.js';
 import {
   ingestKnowledge,
@@ -41,8 +41,23 @@ import {
   opseraConfigured,
   recordOpseraDeployment,
 } from './opsera.js';
-import { startAutonomousLoop } from './autonomous.js';
+import { driveServiceChain, serviceAccountReady, startAutonomousLoop } from './autonomous.js';
 import { registerCors } from './cors.js';
+import {
+  pagerdutyEnabled,
+  parsePagerDutyTrigger,
+  resolvePagerDutyIncident,
+  verifyPagerDutySignature,
+} from './pagerduty.js';
+import {
+  parseSentryEvent,
+  resolveSentryIssue,
+  sentryEnabled,
+  stashSentryEnrichment,
+  takeSentryEnrichment,
+  verifySentrySignature,
+} from './sentry.js';
+import { registerExternal, takeExternal } from './external-incidents.js';
 
 const SENSOR_URL = process.env.SENSOR_URL ?? 'http://localhost:3003';
 const TARGET_DIR = process.env.TARGET_DIR ?? '/target';
@@ -85,25 +100,46 @@ if (knowledgeEnabled()) {
 }
 
 const app = Fastify();
+
+// Preserve the raw request body (still exposing the parsed object on request.body)
+// so the webhook routes can verify provider HMAC signatures over the exact bytes.
+app.addContentTypeParser('application/json', { parseAs: 'string' }, (req, body, done) => {
+  (req as unknown as { rawBody?: string }).rawBody = body as string;
+  if (!body) {
+    done(null, {});
+    return;
+  }
+  try {
+    done(null, JSON.parse(body as string));
+  } catch (err) {
+    done(err as Error, undefined);
+  }
+});
+
 registerCors(app);
 
 app.get('/connection', async () => {
-  // Proof the pipeline runs on RocketRide Cloud: connect (if not yet) and
-  // return the live connection info — uri must be the cloud host.
   try {
-    await pipeline.ensureConnected();
+    await pipeline.ensureConfigured();
+    return pipeline.connectionInfo();
   } catch (err) {
     return { ...pipeline.connectionInfo(), error: String(err) };
   }
-  return pipeline.connectionInfo();
 });
 
 app.get('/health', async () => {
   let sensor = false;
+  let graph = null;
   try {
     sensor = (await fetch(`${SENSOR_URL}/incident`)).ok;
   } catch {
     /* sensor unreachable */
+  }
+  try {
+    const res = await fetch(`${SENSOR_URL}/graph/summary`);
+    if (res.ok) graph = await res.json();
+  } catch {
+    /* graph summary unavailable */
   }
   let neo4j = false;
   try {
@@ -112,26 +148,20 @@ app.get('/health', async () => {
   } catch {
     /* neo4j unreachable */
   }
-  // RocketRide's WebSocket can drop while idle; reconnect before reporting
-  // status so Mission Control doesn't show "disconnected" when Cloud is fine.
-  if (rocketrideConfigured()) {
-    try {
-      await pipeline.ensureConnected();
-    } catch {
-      /* rocketride unreachable */
-    }
-  }
   return {
     sensor,
     neo4j,
-    rocketride: pipeline.connectionInfo(),
+    graph,
+    llm: pipeline.connectionInfo(),
     butterbase: butterbaseConfigured(),
     tools: {
       daytona: Boolean(process.env.DAYTONA_API_KEY),
       github: githubConfigured(),
       nebius: Boolean(process.env.NEBIUS_API_KEY && process.env.NEBIUS_EMBED_MODEL),
-      rocketride: rocketrideConfigured(),
+      llm: llmConfigured(),
       opsera: opseraConfigured(),
+      pagerduty: pagerdutyEnabled(),
+      sentry: sentryEnabled(),
     },
   };
 });
@@ -172,6 +202,18 @@ async function runDiagnosis(candidates = 1): Promise<
   const incident = (await res.json()) as Incident;
   if (incident.status === 'ok') return { status: 'ok' };
 
+  // Sentry enrichment (consume-once): a stack frame from the paging error can
+  // seed the root cause when the sensor didn't pin one, and its stack trace is
+  // appended to the diagnosis context below. Additive — no-op when Sentry is off.
+  const sentry = takeSentryEnrichment();
+  if (sentry && !incident.root_cause && sentry.root_cause_hint) {
+    const hintedFile = await functionFile(driver, sentry.root_cause_hint);
+    if (hintedFile) {
+      incident.root_cause = sentry.root_cause_hint;
+      log('sentry_seeded_root_cause', { root_cause: incident.root_cause, file: hintedFile });
+    }
+  }
+
   log('diagnose_start', { root_cause: incident.root_cause, failing_tests: incident.failing_tests });
 
   let runbooks = null;
@@ -185,6 +227,10 @@ async function runDiagnosis(candidates = 1): Promise<
   }
 
   let context = await assembleContext(driver, TARGET_DIR, incident, runbooks);
+
+  if (sentry?.stack_summary) {
+    context += `\n## Sentry error (the real runtime error that paged us)\n\`\`\`\n${sentry.stack_summary}\n\`\`\``;
+  }
 
   // Integration 1 & 3: enrich the prompt with Cognee knowledge-graph hits and
   // recalled prior incidents. Both are best-effort and additive — the existing
@@ -208,10 +254,10 @@ async function runDiagnosis(candidates = 1): Promise<
   }
   log('context_assembled', { chars: context.length });
   const diagnosis = await pipeline.diagnose(context);
-  const pipelineKind = pipeline.connectionInfo().pipeline;
-  log('diagnose_done', { severity: diagnosis.severity, cited_runbook: diagnosis.cited_runbook, pipeline: pipelineKind });
+  const llmInfo = pipeline.connectionInfo();
+  log('diagnose_done', { severity: diagnosis.severity, cited_runbook: diagnosis.cited_runbook, llm: llmInfo.provider });
 
-  return { status: 'incident', incident, diagnosis, pipeline: pipelineKind };
+  return { status: 'incident', incident, diagnosis, pipeline: llmInfo.provider };
 }
 
 // M5: Butterbase persistence is keyed to the signed-in user's JWT. When the
@@ -236,6 +282,92 @@ app.post('/diagnose', async (request, reply) => {
     return { ...out, ...rows };
   }
   return out;
+});
+
+// External incident sources (PagerDuty / Sentry). An inbound alert correlates to
+// the sensor-detected code incident (by root_cause) so the fix ships resolve the
+// right alert, then drives the same headless chain the autonomous loop uses.
+// Guards against a concurrent double-run when both providers page one incident.
+const externalInFlight = new Set<string>();
+
+async function handleExternalTrigger(refs: {
+  pagerduty_incident_id?: string;
+  sentry_issue_id?: string;
+}): Promise<void> {
+  const res = await fetch(`${SENSOR_URL}/incident`);
+  const incident = res.ok ? ((await res.json()) as Incident) : null;
+  if (!incident || incident.status === 'ok') {
+    log('webhook_no_incident', { hint: 'sensor reports no open incident — nothing to drive' });
+    return;
+  }
+  const key = incident.root_cause ?? 'unknown';
+  registerExternal(incident.root_cause, refs);
+  if (externalInFlight.has(key)) {
+    log('webhook_already_in_flight', { key });
+    return;
+  }
+  externalInFlight.add(key);
+  try {
+    log('webhook_trigger', { key, refs });
+    const outcome = await driveServiceChain(`http://localhost:${PORT}`);
+    log('webhook_chain_done', { key, ...outcome });
+  } finally {
+    externalInFlight.delete(key);
+  }
+}
+
+app.post('/webhooks/pagerduty', async (request, reply) => {
+  if (!pagerdutyEnabled()) {
+    reply.code(404);
+    return { error: 'pagerduty integration disabled' };
+  }
+  const raw = (request as { rawBody?: string }).rawBody ?? '';
+  if (!verifyPagerDutySignature(raw, request.headers['x-pagerduty-signature'] as string | undefined)) {
+    reply.code(401);
+    return { error: 'invalid signature' };
+  }
+  const trigger = parsePagerDutyTrigger(request.body);
+  if (!trigger) {
+    reply.code(202);
+    return { status: 'ignored' };
+  }
+  if (!serviceAccountReady()) {
+    reply.code(503);
+    return { error: 'service account not configured (Butterbase + SERVICE_PASSWORD required)' };
+  }
+  void handleExternalTrigger({ pagerduty_incident_id: trigger.incident_id }).catch((err) =>
+    log('webhook_pagerduty_error', { error: String(err) }),
+  );
+  reply.code(202);
+  return { status: 'accepted', incident_id: trigger.incident_id };
+});
+
+app.post('/webhooks/sentry', async (request, reply) => {
+  if (!sentryEnabled()) {
+    reply.code(404);
+    return { error: 'sentry integration disabled' };
+  }
+  const raw = (request as { rawBody?: string }).rawBody ?? '';
+  if (!verifySentrySignature(raw, request.headers['sentry-hook-signature'] as string | undefined)) {
+    reply.code(401);
+    return { error: 'invalid signature' };
+  }
+  const enrichment = parseSentryEvent(request.body);
+  if (!enrichment) {
+    reply.code(202);
+    return { status: 'ignored' };
+  }
+  if (!serviceAccountReady()) {
+    reply.code(503);
+    return { error: 'service account not configured (Butterbase + SERVICE_PASSWORD required)' };
+  }
+  // Stash before triggering so the chain's /diagnose picks up the enrichment.
+  stashSentryEnrichment(enrichment);
+  void handleExternalTrigger({ sentry_issue_id: enrichment.issue_id ?? undefined }).catch((err) =>
+    log('webhook_sentry_error', { error: String(err) }),
+  );
+  reply.code(202);
+  return { status: 'accepted', issue_id: enrichment.issue_id };
 });
 
 // The M6 ship path: spend a credit → real GitHub PR → resolve + MTTR.
@@ -283,6 +415,17 @@ async function shipVerifiedFix(
   }
 
   const { mttr_seconds } = await markApplied(token, pending.action, pending.incident);
+
+  // Resolve the external alert that paged us (PagerDuty incident / Sentry issue),
+  // if this incident was triggered by one. Single choke point for both the auto
+  // and approved-ship paths; no-op when nothing was correlated. Best-effort.
+  const ext = takeExternal(pending.incident.root_cause);
+  if (ext.pagerduty_incident_id) {
+    void resolvePagerDutyIncident(ext.pagerduty_incident_id, { pr_url, mttr_seconds });
+  }
+  if (ext.sentry_issue_id) {
+    void resolveSentryIssue(ext.sentry_issue_id, { pr_url });
+  }
 
   // Record the deployment + DORA Time-to-Restore in Opsera (best-effort).
   void recordOpseraDeployment({
@@ -457,7 +600,7 @@ app.post('/remediate', async (request, reply) => {
       diagnosis = cached.diagnosis;
       log('remediate_cached_candidate', { path: cached.candidate.path });
     } else {
-      log('remediate_cache_miss', { hint: 'no persisted diagnose candidate — will call RocketRide' });
+      log('remediate_cache_miss', { hint: 'no persisted diagnose candidate — will run LLM diagnosis' });
       // Candidate cap is configurable (default generous); each candidate is an
       // LLM call + sandbox verify, so keep a sane upper bound rather than truly ∞.
       const MAX_CANDIDATES = Math.max(Number(process.env.MAX_CANDIDATES ?? 25), 1);
@@ -540,6 +683,5 @@ log('listening', { port: PORT });
 // diagnose → remediate → apply for new incidents with no human in the loop.
 startAutonomousLoop({ sensorUrl: SENSOR_URL, selfUrl: `http://localhost:${PORT}` });
 
-// Fire-and-forget: pre-load the Cloud pipeline so the first /diagnose is warm —
-// a cold load (restart + LLM service boot) can take minutes.
-pipeline.warmup().catch((err) => log('pipeline_warmup_flagged', { error: String(err) }));
+// Fire-and-forget: verify LLM credentials at boot so the first /diagnose fails fast.
+pipeline.warmup().catch((err) => log('llm_warmup_flagged', { error: String(err) }));

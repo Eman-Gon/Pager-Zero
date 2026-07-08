@@ -33,18 +33,23 @@ export default function StatusBar() {
 
   if (!health) return <div className="statusbar muted">checking dependencies…</div>;
 
-  const rr = health.rocketride;
-  const rrOk = rr.connected;
-  const pipe = rr.pipeline ? ` · ${rr.pipeline} pipe` : '';
-  const rrTitle = rr.connected ? `${rr.uri}${pipe}` : 'RocketRide disconnected — Diagnose unavailable';
+  const llm = health.llm;
+  const llmOk = llm.configured;
+  const llmTitle = llmOk ? `${llm.provider} · ${llm.model}` : 'LLM not configured — Diagnose unavailable';
   const tools = health.tools;
+  const graphNodes = health.graph ? Object.values(health.graph.nodes).reduce((sum, n) => sum + n, 0) : 0;
+  const graphRels = health.graph ? Object.values(health.graph.relationships).reduce((sum, n) => sum + n, 0) : 0;
+  const graphTitle = health.graph
+    ? `${graphNodes} nodes · ${graphRels} relationships · ${health.graph.changed_functions} changed`
+    : 'graph summary unavailable';
 
   return (
     <div className="statusbar">
       <span className="statusbar-label">deps</span>
       {pill('sensor', health.sensor)}
       {pill('neo4j', health.neo4j)}
-      {pill('rocketride', rrOk, rrTitle)}
+      {pill(`graph ${graphNodes}n`, health.graph ? true : 'warn', graphTitle)}
+      {pill('llm', llmOk, llmTitle)}
       {pill('butterbase', health.butterbase, health.butterbase ? 'persistence + auth active' : 'not configured')}
       {tools?.daytona === false && pill('daytona', false, 'not configured')}
       {tools?.github === false && pill('github', false, 'not configured')}

@@ -38,19 +38,22 @@ export function IncidentTable() {
           <CardTitle className="flex items-center gap-2 text-base">
             <Siren className="size-4" /> Incident queue
           </CardTitle>
-          <CardDescription>Live triage across sensor, PagerDuty, and Sentry sources.</CardDescription>
+          <CardDescription>
+            Live triage across sensor, PagerDuty, and Sentry. Root cause is the suspected broken
+            function; status shows where the agent is in the response flow.
+          </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
           <div className="overflow-x-auto scrollbar-thin">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-y text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-5 py-2.5 font-medium">Incident</th>
-                  <th className="px-3 py-2.5 font-medium">Root cause</th>
-                  <th className="px-3 py-2.5 font-medium">Severity</th>
-                  <th className="px-3 py-2.5 font-medium">Status</th>
-                  <th className="hidden px-3 py-2.5 font-medium md:table-cell">Source</th>
-                  <th className="hidden px-3 py-2.5 font-medium lg:table-cell">Age</th>
+                  <th className="px-5 py-2.5 font-medium" title="Tracking ID for this problem.">Incident</th>
+                  <th className="px-3 py-2.5 font-medium" title="Function the agent thinks caused the break.">Root cause</th>
+                  <th className="px-3 py-2.5 font-medium" title="Business impact estimate.">Severity</th>
+                  <th className="px-3 py-2.5 font-medium" title="Current step: diagnose, verify, approve, ship, or resolve.">Status</th>
+                  <th className="hidden px-3 py-2.5 font-medium md:table-cell" title="Where the signal came from.">Source</th>
+                  <th className="hidden px-3 py-2.5 font-medium lg:table-cell" title="How long ago the incident appeared.">Age</th>
                   <th className="px-3 py-2.5" />
                 </tr>
               </thead>

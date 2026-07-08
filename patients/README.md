@@ -38,6 +38,26 @@ The bug for each patient is registered in the sensor's `DEMO_BREAKS` catalog
 (`services/sensor/src/index.ts`), keyed by source file, so the same UI buttons
 work for whichever patient is loaded.
 
+## GitHub repos (for the ship step)
+
+Detection, diagnosis, and sandbox verification all run against the **local**
+`target-repo` — no GitHub needed. The ship step, however, opens the fix as a PR
+against a GitHub repo (`GITHUB_REPO`, see `services/responder/src/ship.ts`), so
+each patient has a private mirror you point the responder at:
+
+| Patient | GitHub repo |
+| ------- | ----------- |
+| `claimflow` | `Eman-Gon/patient-claimflow` |
+| `billing` | `Eman-Gon/patient-billing` |
+| `pricing` | `Eman-Gon/patient-pricing` |
+| `eligibility` | `Eman-Gon/patient-eligibility` |
+| `identity` | `Eman-Gon/patient-identity` |
+| `riskgate` | `Eman-Gon/patient-riskgate` |
+
+When you load a patient, set `GITHUB_REPO` to its mirror (and a `GITHUB_TOKEN`
+with `repo` scope) so the verified fix PR lands against the right codebase.
+`scripts/load-patient.sh` prints the exact value to use.
+
 ## Adding a patient
 
 1. Create `patients/<name>/` with `package.json`, `tsconfig.json`, `src/`, `test/`.

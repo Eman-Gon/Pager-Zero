@@ -43,6 +43,52 @@ let lastHead: string | null = null;
 let lastScanAt: string | null = null;
 let lastScanError: string | null = null;
 
+function countValue(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (value && typeof (value as { toNumber?: () => number }).toNumber === 'function') {
+    return (value as { toNumber: () => number }).toNumber();
+  }
+  return Number(value ?? 0);
+}
+
+app.get('/graph/summary', async () => {
+  const session = openSession(driver);
+  try {
+    const nodeCounts = await session.run(`
+      MATCH (n)
+      UNWIND labels(n) AS label
+      RETURN label, count(*) AS count
+      ORDER BY label
+    `);
+    const relationshipCounts = await session.run(`
+      MATCH ()-[r]->()
+      RETURN type(r) AS type, count(r) AS count
+      ORDER BY type
+    `);
+    const functionStatuses = await session.run(`
+      MATCH (f:Function)
+      RETURN coalesce(f.status, 'unknown') AS status, count(*) AS count
+      ORDER BY status
+    `);
+    const changed = await session.run(`
+      MATCH (f:Function {changed: true})
+      RETURN count(f) AS count
+    `);
+
+    return {
+      nodes: Object.fromEntries(nodeCounts.records.map((r) => [r.get('label'), countValue(r.get('count'))])),
+      relationships: Object.fromEntries(relationshipCounts.records.map((r) => [r.get('type'), countValue(r.get('count'))])),
+      functions_by_status: Object.fromEntries(functionStatuses.records.map((r) => [r.get('status'), countValue(r.get('count'))])),
+      changed_functions: countValue(changed.records[0]?.get('count')),
+      scanned_head: lastHead,
+      last_scan_at: lastScanAt,
+      last_scan_error: lastScanError,
+    };
+  } finally {
+    await session.close();
+  }
+});
+
 app.get('/incident', async () => {
   const session = openSession(driver);
   try {
@@ -66,8 +112,10 @@ app.get('/incident', async () => {
         status: lastHead ? 'ok' : 'unscanned',
         failing_tests: [],
         changed_functions: changedFunctions,
+        changed_function_count: changedFunctions.length,
         root_cause: null,
         blast_radius: [],
+        blast_radius_count: 0,
         ...scanMeta,
       };
     }
@@ -93,8 +141,10 @@ app.get('/incident', async () => {
       status: 'incident',
       failing_tests: failingTests,
       changed_functions: changedFunctions,
+      changed_function_count: changedFunctions.length,
       root_cause: rootCause,
       blast_radius: blastRadius,
+      blast_radius_count: blastRadius.length,
       scanned_head: lastHead,
       last_scan_at: lastScanAt,
       last_scan_error: lastScanError,

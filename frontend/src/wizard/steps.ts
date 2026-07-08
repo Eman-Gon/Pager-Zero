@@ -31,9 +31,9 @@ export const STEPS: WizardStep[] = [
   {
     id: 'diagnose',
     label: 'Diagnose',
-    tool: 'RocketRide · Nebius',
+    tool: 'LLM · Nebius',
     title: 'Diagnose the root cause',
-    blurb: 'The RocketRide pipeline reasons over the failing tests, code graph, and cited runbooks to explain what broke and propose a fix.',
+    blurb: 'The LLM reasons over the failing tests, code graph, and cited runbooks to explain what broke and propose a fix.',
   },
   {
     id: 'verify',

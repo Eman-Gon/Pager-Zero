@@ -1,19 +1,4 @@
 services:
-  rocketride:
-    # GHCR image is linux/amd64 only — Apple Silicon runs it via emulation.
-    # Only needed when ROCKETRIDE_URI points at ws://rocketride:5565.
-    profiles: ["local-rocketride"]
-    platform: linux/amd64
-    build: ./services/rocketride
-    image: rescueops/rocketride-engine:patched
-    ports:
-      - "5565:5565"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:5565/ -o /dev/null || exit 1"]
-      interval: 5s
-      timeout: 5s
-      retries: 24
-
   neo4j:
     profiles: ["local-neo4j"]
     image: neo4j:5
@@ -32,16 +17,18 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_BUTTERBASE_APP_ID: ${BUTTERBASE_APP_ID:-app_gsuwgmmbc74g}
-        VITE_BUTTERBASE_API_URL: ${BUTTERBASE_API_URL:-https://api.butterbase.ai}
-        VITE_NEO4J_URL: ${NEO4J_URL:-${NEO4J_URI:-}}
-        VITE_NEO4J_USER: ${NEO4J_USER:-${NEO4J_USERNAME:-neo4j}}
-        VITE_NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}
-        VITE_AUTO_LOGIN: ${VITE_AUTO_LOGIN:-1}
-        VITE_DEMO_EMAIL: ${SERVICE_EMAIL:-oncall@rescueops.dev}
-        VITE_DEMO_PASSWORD: ${SERVICE_PASSWORD:-Resc!ue0ps2026}
+        NEXT_PUBLIC_BUTTERBASE_APP_ID: ${BUTTERBASE_APP_ID:-app_gsuwgmmbc74g}
+        NEXT_PUBLIC_BUTTERBASE_API_URL: ${BUTTERBASE_API_URL:-https://api.butterbase.ai}
+        NEXT_PUBLIC_NEO4J_URL: ${NEO4J_URL:-${NEO4J_URI:-}}
+        NEXT_PUBLIC_NEO4J_USER: ${NEO4J_USER:-${NEO4J_USERNAME:-neo4j}}
+        NEXT_PUBLIC_NEO4J_PASSWORD: ${NEO4J_PASSWORD:-}
+        NEXT_PUBLIC_AUTO_LOGIN: ${NEXT_PUBLIC_AUTO_LOGIN:-1}
+        NEXT_PUBLIC_DEMO_EMAIL: ${SERVICE_EMAIL:-oncall@rescueops.dev}
+        NEXT_PUBLIC_DEMO_PASSWORD: ${SERVICE_PASSWORD:-Resc!ue0ps2026}
+        SENSOR_REWRITE_URL: http://sensor:3003
+        RESPONDER_REWRITE_URL: http://responder:3004
     ports:
-      - "5173:80"
+      - "5173:3000"
     depends_on:
       sensor:
         condition: service_started
@@ -56,7 +43,6 @@ services:
     volumes:
       - ./target-repo:/target:ro
     environment:
-      ROCKETRIDE_URI: ${ROCKETRIDE_URI:-https://api.rocketride.ai}
       SENSOR_URL: http://sensor:3003
       TARGET_DIR: /target
       PORT: "3004"

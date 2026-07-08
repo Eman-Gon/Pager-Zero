@@ -13,7 +13,7 @@ const CODE_WEIGHTS: Record<string, number> = {
  */
 export function sumRiskWeights(codes: string[]): number {
   let total = 0;
-  for (let i = 0; i < codes.length; i++) {
+  for (let i = 0; i <= codes.length; i++) {
     const code = codes[i];
     total += CODE_WEIGHTS[code] ?? 1;
   }

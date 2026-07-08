@@ -3,10 +3,10 @@ import { createClient, type ButterbaseClient } from '@butterbase/sdk';
 // only use the other's exports inside function bodies, never at module init.
 import { tokenExpired } from './auth';
 
-export const APP_ID = import.meta.env.VITE_BUTTERBASE_APP_ID ?? 'app_gsuwgmmbc74g';
-export const BB_API_URL = import.meta.env.VITE_BUTTERBASE_API_URL ?? 'https://api.butterbase.ai';
-const SENSOR = import.meta.env.VITE_SENSOR_URL ?? '/sensor';
-const RESPONDER = import.meta.env.VITE_RESPONDER_URL ?? '/responder';
+export const APP_ID = process.env.NEXT_PUBLIC_BUTTERBASE_APP_ID ?? 'app_gsuwgmmbc74g';
+export const BB_API_URL = process.env.NEXT_PUBLIC_BUTTERBASE_API_URL ?? 'https://api.butterbase.ai';
+const SENSOR = process.env.NEXT_PUBLIC_SENSOR_URL ?? '/sensor';
+const RESPONDER = process.env.NEXT_PUBLIC_RESPONDER_URL ?? '/responder';
 
 export const butterbase: ButterbaseClient = createClient({ appId: APP_ID, apiUrl: BB_API_URL });
 
@@ -75,13 +75,22 @@ export async function resetIncident(): Promise<{ status: string }> {
 export interface HealthStatus {
   sensor: boolean;
   neo4j: boolean;
-  rocketride: { connected: boolean; transport: string; uri: string; pipeline?: string };
+  graph: {
+    nodes: Record<string, number>;
+    relationships: Record<string, number>;
+    functions_by_status: Record<string, number>;
+    changed_functions: number;
+    scanned_head: string | null;
+    last_scan_at: string | null;
+    last_scan_error: string | null;
+  } | null;
+  llm: { configured: boolean; provider: string; model: string; base_url: string };
   butterbase: boolean;
   tools: {
     daytona: boolean;
     github: boolean;
     nebius: boolean;
-    rocketride: boolean;
+    llm: boolean;
     opsera?: boolean;
   };
 }

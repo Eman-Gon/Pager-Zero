@@ -2,7 +2,7 @@
 # RescueOps++ final-verification Phase 1: end-to-end happy path.
 # Runs the full incident lifecycle against the LIVE system and asserts each
 # stage. Exits non-zero on the first failure. No mocks — every step hits the
-# real sensor, responder, RocketRide Cloud, Daytona, Butterbase, and GitHub.
+# real sensor, responder, LLM, Daytona, Butterbase, and GitHub.
 #
 #   ./scripts/e2e.sh
 set -uo pipefail
@@ -68,10 +68,10 @@ echo "$incident" | jq -e '.blast_radius | index("invoiceTotal") and index("rende
   || fail "blast_radius missing invoiceTotal/renderInvoice: $(echo "$incident" | jq -c '.blast_radius')"
 ok "root_cause=computeTax, blast_radius=$(echo "$incident" | jq -c '.blast_radius')"
 
-# --- step 3: diagnose on RocketRide Cloud ---------------------------------------
-step "POST /diagnose (RocketRide Cloud)"
-# -m 600: a cold pipeline load (restart + LLM service boot) can take minutes.
-diagnosis=$(curl -sf -m 600 -X POST -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/diagnose") || fail "POST /diagnose failed"
+# --- step 3: diagnose via LLM ---------------------------------------------------
+step "POST /diagnose (LLM)"
+# -m 300: diagnosis is a single LLM call (no pipeline cold-start).
+diagnosis=$(curl -sf -m 300 -X POST -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/diagnose") || fail "POST /diagnose failed"
 [[ $(echo "$diagnosis" | jq -r '.status') == "incident" ]] || fail "diagnose returned: $diagnosis"
 echo "$diagnosis" | jq -e '.diagnosis.root_cause_explanation | test("computeTax")' >/dev/null \
   || fail "diagnosis does not name computeTax: $(echo "$diagnosis" | jq -c '.diagnosis.root_cause_explanation')"

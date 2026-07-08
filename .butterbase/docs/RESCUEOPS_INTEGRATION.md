@@ -1,13 +1,13 @@
 # Butterbase in RescueOps++
 
-Butterbase is the product backend (Milestone 5+): auth, persistence, credits/payment, and the AI gateway that serves the RocketRide diagnosis pipeline.
+Butterbase is the product backend (Milestone 5+): auth, persistence, credits/payment, and the AI gateway that serves the diagnosis LLM.
 
 ## Architecture
 
 ```
 frontend (Mission Control) ──JWT──► responder ──Data API──► Butterbase Postgres
                                         │
-                                        └── gateway key ──► Butterbase AI Gateway ──► diagnose.pipe LLM
+                                        └── gateway key ──► Butterbase AI Gateway ──► diagnosis LLM
 ```
 
 | Piece | Location | Role |
@@ -87,17 +87,15 @@ When `BUTTERBASE_APP_ID` is unset, the responder still runs diagnosis/remediatio
 
 ## AI gateway (M3 + M5)
 
-The RocketRide pipeline's `llm_openai_api` node points at Butterbase gateway:
+Diagnosis is a direct OpenAI-compatible `chat/completions` call pointed at the Butterbase gateway:
 
-```json
-{
-  "base_url": "${ROCKETRIDE_BUTTERBASE_GATEWAY_URL}",
-  "apikey": "${ROCKETRIDE_BUTTERBASE_API_KEY}",
-  "model": "${ROCKETRIDE_BUTTERBASE_MODEL}"
-}
+```
+base_url: ${BUTTERBASE_GATEWAY_URL}
+apikey:   ${BUTTERBASE_API_KEY}
+model:    ${BUTTERBASE_MODEL}
 ```
 
-Substitutions are injected by `DiagnosisPipeline` via the RocketRide client's `env` block.
+The responder assembles the context and issues the call in `services/responder/src/pipeline.ts`.
 
 ## Key responder endpoints (auth-gated when configured)
 

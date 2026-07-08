@@ -257,7 +257,7 @@ export interface StoredIncidentRow {
 }
 
 // Latest diagnose (or remediate) candidate for /remediate without re-running
-// RocketRide. Only a real stored candidate counts — no path or content is ever
+// diagnosis. Only a real stored candidate counts — no path or content is ever
 // synthesized here; a cache miss makes /remediate re-run the pipeline.
 function materializeCandidate(payload: StoredActionPayload): CandidateFix | null {
   if (!payload.path || !payload.content?.trim()) return null;

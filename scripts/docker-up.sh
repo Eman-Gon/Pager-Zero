@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# One-command stack: sensor + responder + Mission Control (nginx).
-# Uses API keys from .env (Neo4j Aura, RocketRide Cloud, Butterbase, …).
+# One-command stack: sensor + responder + Mission Control (Next.js).
+# Uses API keys from .env (Neo4j Aura, Butterbase, …).
 #
 #   ./scripts/docker-up.sh          # build + start (foreground)
 #   ./scripts/docker-up.sh -d       # detached
@@ -8,7 +8,7 @@
 #
 # Optional profiles:
 #   --profile local-neo4j       local Neo4j instead of Aura
-#   --profile local-rocketride  local RocketRide engine instead of Cloud
+#   --profile local-neo4j  local Neo4j instead of Aura
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

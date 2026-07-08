@@ -3,8 +3,8 @@
 import * as React from 'react';
 import {
   Activity,
+  Database,
   LayoutDashboard,
-  RadioTower,
   ScrollText,
   Search,
   Siren,
@@ -21,6 +21,7 @@ const NAV = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard },
   { id: 'incidents', label: 'Incident queue', icon: Siren },
   { id: 'trends', label: 'Trends & MTTR', icon: Activity },
+  { id: 'neo4j', label: 'Neo4j nodes', icon: Database },
   { id: 'runbooks', label: 'Runbook memory', icon: ScrollText },
 ];
 
@@ -28,15 +29,20 @@ function PagerZeroLogo({ className }: { className?: string }) {
   return (
     <div
       className={cn(
-        'relative grid place-items-center overflow-hidden rounded-xl bg-primary text-primary-foreground shadow-sm ring-1 ring-border',
+        'relative grid place-items-center overflow-hidden rounded-md bg-foreground text-background shadow-sm ring-1 ring-border',
         className,
       )}
       aria-hidden="true"
     >
-      <span className="absolute inset-0 bg-[radial-gradient(circle_at_28%_22%,hsl(var(--success)/0.3),transparent_42%)]" />
-      <RadioTower className="relative size-[55%]" strokeWidth={2.4} />
-      <span className="absolute right-1 top-1 grid size-3 place-items-center rounded-full bg-success text-[8px] font-bold leading-none text-success-foreground ring-1 ring-background">
-        0
+      <span
+        className="absolute inset-0 opacity-10"
+        style={{
+          backgroundImage:
+            'repeating-linear-gradient(90deg, currentColor 0 1px, transparent 1px 7px), repeating-linear-gradient(0deg, currentColor 0 1px, transparent 1px 7px)',
+        }}
+      />
+      <span className="relative font-mono text-[13px] font-black leading-none tracking-normal">
+        P0
       </span>
     </div>
   );

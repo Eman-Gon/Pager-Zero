@@ -45,22 +45,22 @@ function buildSteps(s: MissionSnapshot): FlowStep[] {
       detail: health.tools.nebius ? 'vector GraphRAG' : 'NEBIUS_* not set',
     },
     {
-      tool: 'rocketride',
+      tool: 'llm',
       label: 'Diagnose',
       state: pipeline.has_diagnose
         ? 'done'
-        : !health.tools.rocketride
+        : !health.tools.llm
           ? 'blocked'
-          : !health.rocketride.connected
+          : !health.llm.configured
             ? 'blocked'
             : incidentLive
               ? 'active'
               : 'off',
       detail: pipeline.has_diagnose
         ? `severity ${pipeline.severity ?? '?'}`
-        : health.rocketride.connected
-          ? 'RocketRide Cloud ready'
-          : 'RocketRide disconnected',
+        : health.llm.configured
+          ? `${health.llm.provider} ready`
+          : 'LLM not configured',
     },
     {
       tool: 'daytona',

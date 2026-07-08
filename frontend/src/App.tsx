@@ -1,3 +1,5 @@
+'use client';
+
 import { useCallback, useEffect, useState } from 'react';
 import { fetchIncident, setSessionRefresher, type Incident } from './api';
 import {
@@ -14,6 +16,7 @@ import {
   signUp,
 } from './auth';
 import CreditsPanel from './panels/CreditsPanel';
+import Neo4jNodesScreen from './panels/Neo4jNodesScreen';
 import StatusBar from './panels/StatusBar';
 import WizardShell from './wizard/WizardShell';
 
@@ -88,7 +91,10 @@ function AuthCard({ onToken }: { onToken: (token: string, email: string) => void
   return (
     <div className="auth-wrap">
       <div className="auth-card auth-card-wide">
-        <h1>RescueOps++</h1>
+        <div className="auth-brand">
+          <span className="brand-mark" aria-hidden="true">P0</span>
+          <h1>PagerZero</h1>
+        </div>
         <div className="muted">Mission control</div>
 
         <div className="auth-tabs">
@@ -195,13 +201,14 @@ function AuthCard({ onToken }: { onToken: (token: string, email: string) => void
   );
 }
 
-const AUTO_LOGIN = (import.meta.env.VITE_AUTO_LOGIN ?? '1') !== '0';
+const AUTO_LOGIN = (process.env.NEXT_PUBLIC_AUTO_LOGIN ?? '1') !== '0';
 
 export default function App() {
   const [token, setToken] = useState<string | null>(null);
   const [email, setEmail] = useState('');
   const [autoTried, setAutoTried] = useState(false);
   const [incident, setIncident] = useState<Incident | null>(null);
+  const [screen, setScreen] = useState<'mission' | 'nodes'>('mission');
   const [tick, setTick] = useState(0);
   const bump = useCallback(() => setTick((t) => t + 1), []);
 
@@ -294,7 +301,15 @@ export default function App() {
   return (
     <>
       <div className="topbar">
-        <h1>RESCUEOPS++ MISSION CONTROL</h1>
+        <h1><span className="brand-mark" aria-hidden="true">P0</span>PAGERZERO MISSION CONTROL</h1>
+        <nav className="topbar-nav" aria-label="Mission Control screens">
+          <button type="button" className={screen === 'mission' ? 'active' : ''} onClick={() => setScreen('mission')}>
+            Mission
+          </button>
+          <button type="button" className={screen === 'nodes' ? 'active' : ''} onClick={() => setScreen('nodes')}>
+            Neo4j nodes
+          </button>
+        </nav>
         <span className={`status-pill ${incident?.status === 'incident' ? 'incident' : 'ok'}`}>
           {incident === null ? 'sensor offline' : incident.status === 'incident' ? 'INCIDENT' : 'all clear'}
         </span>
@@ -310,7 +325,11 @@ export default function App() {
         <StatusBar />
         <span className="who">{email}</span>
       </div>
-      <WizardShell token={token} incident={incident} tick={tick} bump={bump} />
+      {screen === 'mission' ? (
+        <WizardShell token={token} incident={incident} tick={tick} bump={bump} />
+      ) : (
+        <Neo4jNodesScreen />
+      )}
     </>
   );
 }

@@ -45,12 +45,20 @@ export function IncidentDetailDialog({
             </DialogHeader>
 
             <div className="space-y-4 text-sm">
-              <Field icon={FileCode2} label="Root cause">
+              <Field
+                icon={FileCode2}
+                label="Root cause"
+                hint="The function the agent believes introduced or exposed the break."
+              >
                 <span className="font-mono font-medium">{incident.rootCause}</span>
                 <span className="text-muted-foreground"> in {incident.file}</span>
               </Field>
 
-              <Field icon={GitBranch} label="Blast radius">
+              <Field
+                icon={GitBranch}
+                label="Blast radius"
+                hint="Functions or workflows that call into the root cause and may be affected."
+              >
                 <div className="flex flex-wrap gap-1.5">
                   {incident.blastRadius.map((fn) => (
                     <Badge key={fn} variant="secondary" className="font-mono">
@@ -64,13 +72,21 @@ export function IncidentDetailDialog({
               </Field>
 
               {incident.citedRunbook && (
-                <Field icon={ScrollText} label="Cited runbook">
+                <Field
+                  icon={ScrollText}
+                  label="Cited runbook"
+                  hint="A stored fix pattern the agent used as context for this diagnosis."
+                >
                   <span className="italic text-muted-foreground">“{incident.citedRunbook}”</span>
                 </Field>
               )}
 
               {incident.mttrSeconds != null && (
-                <Field icon={CheckCircle2} label="Time to restore">
+                <Field
+                  icon={CheckCircle2}
+                  label="Time to restore"
+                  hint="How long it took from detection to a restored or shipped state."
+                >
                   <span className="font-medium text-success">{formatDuration(incident.mttrSeconds)}</span>
                 </Field>
               )}
@@ -108,10 +124,12 @@ export function IncidentDetailDialog({
 function Field({
   icon: Icon,
   label,
+  hint,
   children,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   label: string;
+  hint?: string;
   children: React.ReactNode;
 }) {
   return (
@@ -119,6 +137,7 @@ function Field({
       <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
       <div className="min-w-0 flex-1">
         <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</div>
+        {hint && <p className="mt-0.5 text-xs leading-5 text-muted-foreground">{hint}</p>}
         <div className="mt-0.5">{children}</div>
       </div>
     </div>

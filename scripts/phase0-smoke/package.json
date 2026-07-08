@@ -5,8 +5,5 @@
   "type": "module",
   "scripts": {
     "smoke": "node smoke.mjs"
-  },
-  "dependencies": {
-    "rocketride": "^1.3.0"
   }
 }

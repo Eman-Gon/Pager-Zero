@@ -3,8 +3,8 @@ import { butterbase } from './api';
 const TOKEN_KEY = 'rescueops_access_token';
 const EMAIL_KEY = 'rescueops_email';
 
-export const DEMO_EMAIL = import.meta.env.VITE_DEMO_EMAIL ?? 'oncall@rescueops.dev';
-export const DEMO_PASSWORD = import.meta.env.VITE_DEMO_PASSWORD ?? 'Resc!ue0ps2026';
+export const DEMO_EMAIL = process.env.NEXT_PUBLIC_DEMO_EMAIL ?? 'oncall@rescueops.dev';
+export const DEMO_PASSWORD = process.env.NEXT_PUBLIC_DEMO_PASSWORD ?? 'Resc!ue0ps2026';
 
 export function saveSession(token: string, email: string) {
   try {

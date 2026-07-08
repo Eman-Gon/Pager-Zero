@@ -4,6 +4,7 @@ import * as React from 'react';
 import { useTheme } from 'next-themes';
 import {
   Activity,
+  Database,
   GitPullRequest,
   LayoutDashboard,
   Moon,
@@ -65,6 +66,10 @@ export function CommandMenu() {
           <CommandItem onSelect={() => go('trends')}>
             <Activity />
             Trends &amp; MTTR
+          </CommandItem>
+          <CommandItem onSelect={() => go('neo4j')}>
+            <Database />
+            Neo4j nodes
           </CommandItem>
           <CommandItem onSelect={() => go('runbooks')}>
             <ScrollText />

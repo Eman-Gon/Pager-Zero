@@ -55,8 +55,7 @@ echo "--- env vars"
 check_var_group NEO4J_URI NEO4J_URI NEO4J_URL
 check_var_group NEO4J_USERNAME NEO4J_USERNAME NEO4J_USER
 check_var_group NEO4J_PASSWORD NEO4J_PASSWORD
-check_var_group ROCKETRIDE_URI ROCKETRIDE_URI
-check_var_group ROCKETRIDE_APIKEY ROCKETRIDE_APIKEY
+check_var_group LLM_PROVIDER LLM_PROVIDER
 check_var_group BUTTERBASE_APP_ID BUTTERBASE_APP_ID
 check_var_group BUTTERBASE_API_KEY BUTTERBASE_API_KEY
 check_var_group BUTTERBASE_API_URL BUTTERBASE_API_URL
@@ -86,17 +85,15 @@ else
   report FAIL "responder:/health" "HTTP ${health_code:-none} from $RESPONDER_URL/health"
 fi
 
-# --- 3. RocketRide Cloud (not localhost) --------------------------------------
-echo "--- rocketride cloud"
+# --- 3. LLM gateway -------------------------------------------------------------
+echo "--- llm"
 conn_body=$(curl -sf -m 20 "$RESPONDER_URL/connection" 2>/dev/null || true)
 if [[ -z "$conn_body" ]]; then
-  report FAIL "rocketride:cloud-uri" "no response from $RESPONDER_URL/connection"
-elif [[ "$conn_body" == *localhost* || "$conn_body" == *127.0.0.1* ]]; then
-  report FAIL "rocketride:cloud-uri" "connection reports a local URI: $conn_body"
-elif [[ "$conn_body" == *rocketride* ]]; then
-  report PASS "rocketride:cloud-uri" "$conn_body"
+  report FAIL "llm:configured" "no response from $RESPONDER_URL/connection"
+elif [[ "$conn_body" == *'"configured":true'* || "$conn_body" == *'"configured": true'* ]]; then
+  report PASS "llm:configured" "$conn_body"
 else
-  report FAIL "rocketride:cloud-uri" "unexpected connection info: $conn_body"
+  report FAIL "llm:configured" "LLM not configured: $conn_body"
 fi
 
 # --- 4. Butterbase auth (sign in the test user) --------------------------------

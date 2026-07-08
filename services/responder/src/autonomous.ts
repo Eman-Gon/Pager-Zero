@@ -36,20 +36,36 @@ async function post(baseUrl: string, path: string, token: string): Promise<{ sta
   return { status: res.status, body };
 }
 
-async function handleIncident(baseUrl: string, incident: Incident): Promise<void> {
-  // Fresh token per incident sidesteps access-token expiry between incidents.
+export interface ChainOutcome {
+  pr_url?: string;
+  status?: string;
+  approval_id?: string;
+  verified: boolean;
+}
+
+// Butterbase (for the service-account sign-in) + a credential must be present
+// before any headless chain — the same precondition the autonomous loop enforces.
+export function serviceAccountReady(): boolean {
+  return butterbaseConfigured() && Boolean(SERVICE_PASSWORD);
+}
+
+// The shared headless diagnose → remediate → apply chain, run as the service
+// (on-call) account through the responder's own HTTP endpoints so the policy
+// gate, paywall, and RLS persistence all apply unchanged. Used by both the
+// autonomous loop and the external-incident webhooks (PagerDuty / Sentry).
+export async function driveServiceChain(baseUrl: string): Promise<ChainOutcome> {
+  // Fresh token per run sidesteps access-token expiry between incidents.
   const token = await signInService(SERVICE_EMAIL, SERVICE_PASSWORD);
-  log('autonomous_incident', { root_cause: incident.root_cause, failing_tests: incident.failing_tests });
 
   const diagnose = await post(baseUrl, '/diagnose', token);
-  log('autonomous_diagnose', { status: diagnose.status });
+  log('drive_diagnose', { status: diagnose.status });
 
   const remediate = await post(baseUrl, '/remediate', token);
   const verified = Boolean((remediate.body as { verified?: boolean } | null)?.verified);
-  log('autonomous_remediate', { status: remediate.status, verified });
+  log('drive_remediate', { status: remediate.status, verified });
   if (!verified) {
-    log('autonomous_no_fix', { hint: 'no verified candidate — leaving incident for a human' });
-    return;
+    log('drive_no_fix', { hint: 'no verified candidate — leaving incident for a human' });
+    return { verified: false };
   }
 
   const apply = await post(baseUrl, '/apply', token);
@@ -57,12 +73,18 @@ async function handleIncident(baseUrl: string, incident: Incident): Promise<void
     | { pr_url?: string; status?: string; approval_id?: string; error?: string }
     | null;
   if (body?.pr_url) {
-    log('autonomous_shipped', { pr_url: body.pr_url });
+    log('drive_shipped', { pr_url: body.pr_url });
   } else if (body?.status === 'pending_approval') {
-    log('autonomous_pending_approval', { approval_id: body.approval_id });
+    log('drive_pending_approval', { approval_id: body.approval_id });
   } else {
-    log('autonomous_apply_blocked', { status: apply.status, body });
+    log('drive_apply_blocked', { status: apply.status, body });
   }
+  return { verified: true, pr_url: body?.pr_url, status: body?.status, approval_id: body?.approval_id };
+}
+
+async function handleIncident(baseUrl: string, incident: Incident): Promise<void> {
+  log('autonomous_incident', { root_cause: incident.root_cause, failing_tests: incident.failing_tests });
+  await driveServiceChain(baseUrl);
 }
 
 export function startAutonomousLoop(opts: { sensorUrl: string; selfUrl: string }): void {

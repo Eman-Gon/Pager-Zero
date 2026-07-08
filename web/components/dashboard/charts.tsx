@@ -43,7 +43,10 @@ export function IncidentTrendChart() {
     <Card className="col-span-1 lg:col-span-2">
       <CardHeader>
         <CardTitle className="text-base">Incidents detected vs. auto-shipped</CardTitle>
-        <CardDescription>Last 14 days</CardDescription>
+        <CardDescription>
+          Last 14 days. Detected means new problems found; auto-shipped means fixes that reached
+          the shipping path.
+        </CardDescription>
       </CardHeader>
       <CardContent className="h-64">
         <ResponsiveContainer width="100%" height="100%">
@@ -89,7 +92,9 @@ export function MttrChart() {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Mean time to restore</CardTitle>
-        <CardDescription>Weekly median, minutes</CardDescription>
+        <CardDescription>
+          Weekly median, in minutes. Lower MTTR means the system is restoring service faster.
+        </CardDescription>
       </CardHeader>
       <CardContent className="h-64">
         <ResponsiveContainer width="100%" height="100%">
@@ -124,7 +129,9 @@ export function SeverityChart() {
     <Card>
       <CardHeader>
         <CardTitle className="text-base">Severity mix</CardTitle>
-        <CardDescription>Resolved this quarter</CardDescription>
+        <CardDescription>
+          Resolved this quarter. Severity estimates how much user or business impact an incident had.
+        </CardDescription>
       </CardHeader>
       <CardContent className="flex h-64 items-center">
         <ResponsiveContainer width="60%" height="100%">

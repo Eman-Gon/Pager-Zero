@@ -5,7 +5,7 @@ import { diagnose, fetchPersistedActions, type Diagnosis, type Incident } from '
 const DIAGNOSE_STEPS = [
   { id: 'sensor', label: 'Sensor', detail: 'Read incident + failing tests' },
   { id: 'neo4j', label: 'Neo4j', detail: 'Code graph + vector runbooks' },
-  { id: 'rocketride', label: 'RocketRide', detail: 'LLM diagnosis pipeline' },
+  { id: 'llm', label: 'LLM', detail: 'Diagnosis + candidate fix' },
   { id: 'persist', label: 'Butterbase', detail: 'Persist agent trace' },
 ];
 
@@ -13,6 +13,16 @@ function traceFromPayload(payload: { trace?: Diagnosis } | null | undefined): Di
   const t = payload?.trace;
   if (!t?.root_cause_explanation) return null;
   return t;
+}
+
+function diagnoseError(status: number, data: { error?: string; message?: string } | null | undefined): string {
+  const serverMessage = data?.message ?? data?.error;
+  if (serverMessage) return serverMessage;
+  if (status === 404) {
+    return 'Responder route not found. In local dev, open the React app on http://127.0.0.1:5173; port 3004 is the responder API.';
+  }
+  if (status === 401) return 'Sign in again, then retry diagnosis.';
+  return `Diagnosis request failed with HTTP ${status}.`;
 }
 
 export default function TracePanel({
@@ -58,7 +68,7 @@ export default function TracePanel({
     setPipeline(null);
     try {
       const { status, data } = await diagnose(token);
-      if (status !== 200) throw new Error(data.error ?? `HTTP ${status}`);
+      if (status !== 200) throw new Error(diagnoseError(status, data));
       if (data.status === 'ok') {
         setError('no incident — nothing to diagnose');
       } else {
@@ -67,7 +77,7 @@ export default function TracePanel({
         setDone(true);
       }
     } catch (err) {
-      setError(String(err));
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -81,7 +91,7 @@ export default function TracePanel({
         </button>
         {restored && result && !busy && <ResultBadge kind="info">restored from Butterbase</ResultBadge>}
         {done && result && !busy && <ResultBadge kind="ok">diagnosis complete</ResultBadge>}
-        {pipeline && !busy && <ResultBadge kind="info">{pipeline} pipeline</ResultBadge>}
+        {pipeline && !busy && <ResultBadge kind="info">{pipeline}</ResultBadge>}
       </div>
 
       <ActionProgress

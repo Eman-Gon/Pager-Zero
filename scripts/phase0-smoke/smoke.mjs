@@ -25,31 +25,7 @@ const pass = (leg, detail) => results.push({ leg, status: 'PASS', detail });
 const fail = (leg, detail) => results.push({ leg, status: 'FAIL', detail });
 const flag = (leg, detail) => results.push({ leg, status: 'FLAGGED (skipped)', detail });
 
-// ---------- 1. RocketRide Cloud ----------
-async function rocketride() {
-  const leg = 'rocketride';
-  const key = process.env.ROCKETRIDE_APIKEY;
-  const uri = process.env.ROCKETRIDE_URI ?? 'https://api.rocketride.ai';
-  if (!key) return flag(leg, 'ROCKETRIDE_APIKEY not set — cannot connect to Cloud');
-  const { RocketRideClient } = await import('rocketride');
-  const client = new RocketRideClient({ auth: key, uri, maxRetryTime: 20000 });
-  try {
-    await client.connect();
-    const info = client.getConnectionInfo();
-    if (!info.connected) return fail(leg, `connect() succeeded but connected=false (${JSON.stringify(info)})`);
-    if (info.uri.includes('localhost') || info.uri.includes('127.0.0.1'))
-      return fail(leg, `connected to ${info.uri} — that is NOT Cloud`);
-    // Trivial .pipe run happens in Phase 1 once the pipe schema is authored;
-    // connect + cloud-host getConnectionInfo() is the Phase 0 proof.
-    pass(leg, `connected=${info.connected} transport=${info.transport} uri=${info.uri}`);
-  } catch (err) {
-    fail(leg, String(err));
-  } finally {
-    try { await client.disconnect(); } catch { /* ignore */ }
-  }
-}
-
-// ---------- 2. Butterbase AI gateway ----------
+// ---------- 1. Butterbase AI gateway ----------
 async function butterbase() {
   const leg = 'butterbase';
   const base = (process.env.BUTTERBASE_GATEWAY_URL ?? 'https://api.butterbase.ai/v1').replace(/\/$/, '');
@@ -74,7 +50,7 @@ async function butterbase() {
   pass(leg, `chat OK via ${base} — "${body.choices?.[0]?.message?.content?.trim()}"`);
 }
 
-// ---------- 3. Nebius embeddings ----------
+// ---------- 2. Nebius embeddings ----------
 async function nebius() {
   const leg = 'nebius';
   const base = (process.env.NEBIUS_BASE_URL ?? 'https://api.studio.nebius.com/v1').replace(/\/$/, '');
@@ -95,7 +71,6 @@ async function nebius() {
   pass(leg, `model=${model} DIMENSION=${dim} <- use for the Neo4j vector index`);
 }
 
-await rocketride();
 await butterbase();
 await nebius();
 

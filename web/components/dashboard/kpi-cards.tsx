@@ -7,6 +7,7 @@ import { kpis } from '@/lib/mock-data';
 interface Kpi {
   label: string;
   value: string;
+  description: string;
   icon: React.ComponentType<{ className?: string }>;
   delta: string;
   trend: 'up' | 'down';
@@ -17,6 +18,7 @@ const cards: Kpi[] = [
   {
     label: 'Open incidents',
     value: formatNumber(kpis.openIncidents),
+    description: 'Problems still being diagnosed, verified, or approved.',
     icon: Siren,
     delta: '2 triaging',
     trend: 'down',
@@ -25,6 +27,7 @@ const cards: Kpi[] = [
   {
     label: 'Auto-resolve rate',
     value: `${Math.round(kpis.autoResolveRate * 100)}%`,
+    description: 'Share of incidents fixed by the agent path without manual repair.',
     icon: Zap,
     delta: '+6pt vs. last wk',
     trend: 'up',
@@ -33,6 +36,7 @@ const cards: Kpi[] = [
   {
     label: 'Median MTTR',
     value: formatDuration(kpis.medianMttrSeconds),
+    description: 'Typical time from detected incident to restored service.',
     icon: Clock,
     delta: '−18% vs. last wk',
     trend: 'down',
@@ -41,6 +45,7 @@ const cards: Kpi[] = [
   {
     label: 'PRs shipped (7d)',
     value: formatNumber(kpis.prsShippedWeek),
+    description: 'Fix pull requests produced in the last seven days.',
     icon: GitPullRequest,
     delta: '+4 vs. last wk',
     trend: 'up',
@@ -61,6 +66,7 @@ export function KpiCards() {
                 <k.icon className="size-4 text-muted-foreground" />
               </div>
               <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight">{k.value}</div>
+              <p className="mt-1 min-h-10 text-xs leading-5 text-muted-foreground">{k.description}</p>
               <div
                 className={cn(
                   'mt-1 flex items-center gap-1 text-xs',

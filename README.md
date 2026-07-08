@@ -25,7 +25,7 @@ Autonomous on-call engineer: watches a codebase, detects broken commits, diagnos
 ./scripts/docker-up.sh -d     # detached
 ```
 
-Reads API keys from `.env`. Optional profiles: `--profile local-neo4j`, `--profile local-rocketride`.
+Reads API keys from `.env`. Optional profile: `--profile local-neo4j`.
 
 **Native (no Docker)** — uses Neo4j Aura / keys from `.env`:
 
@@ -37,7 +37,7 @@ Reads API keys from `.env`. Optional profiles: `--profile local-neo4j`, `--profi
 
 ```bash
 ./scripts/break.sh
-curl http://localhost:3004/connection   # proves RocketRide Cloud URI
+curl http://localhost:3004/connection   # proves LLM gateway is configured
 curl -X POST http://localhost:3004/diagnose
 ```
 
@@ -47,46 +47,26 @@ curl -X POST http://localhost:3004/diagnose
 
 ```bash
 # Expose sensor (:3003) + responder (:3004) publicly first (VPS or tunnel), then:
-VITE_SENSOR_URL=https://your-host:3003 \
-VITE_RESPONDER_URL=https://your-host:3004 \
+NEXT_PUBLIC_SENSOR_URL=https://your-host:3003 \
+NEXT_PUBLIC_RESPONDER_URL=https://your-host:3004 \
 ./scripts/deploy-frontend.sh
 ```
-
-See `DEMO.md` for the on-stage runbook.
 
 ## Autonomous mode
 
 By default RescueOps++ waits for a click in Mission Control (`/diagnose`, `/remediate`, `/apply`). Set `AUTONOMOUS=1` in `.env` to make the responder a true autonomous on-call engineer: it watches the sensor and, the moment a new incident appears, runs **diagnose → remediate → apply** itself — no human in the loop. It acts as the service account (`SERVICE_EMAIL` / `SERVICE_PASSWORD`, defaulting to the demo on-call user), so incidents and actions persist under RLS exactly as an operator's would, and the policy gate still applies: risky fixes park as pending approvals rather than auto-shipping a PR. Requires Butterbase to be configured. Tune the watch cadence with `AUTONOMOUS_POLL_MS` (default 5000).
 
-## RocketRide (diagnosis pipeline)
+## LLM diagnosis
 
-RescueOps++ uses a **Cerberus-style** RocketRide setup: wave-planning agent first, simple prompt→LLM fallback.
+Diagnosis is a direct OpenAI-compatible `chat/completions` call — context assembled in the responder, JSON diagnosis returned.
 
-| Pipeline | File | When |
-| -------- | ---- | ---- |
-| Native (optional) | `services/responder/rescueops-diagnose-native.pipe` | `RESCUEOPS_NATIVE_PIPELINE=1`; RocketRide native `db_neo4j` + `tool_butterbase` |
-| Agent (primary) | `services/responder/rescueops-diagnose-agent.pipe` | `agent_rocketride` + Neo4j MCP + `memory_internal` + blast-radius scorer |
-| Query (fallback) | `services/responder/rescueops-diagnose-query.pipe` | Pre-assembled context → prompt → Butterbase LLM |
+| Provider | `LLM_PROVIDER` | Keys |
+| -------- | -------------- | ---- |
+| Butterbase gateway (default) | `butterbase` | `BUTTERBASE_API_KEY`, `BUTTERBASE_GATEWAY_URL` |
+| OpenAI | `openai` | `OPENAI_API_KEY` |
+| Nebius | `nebius` | `NEBIUS_API_KEY`, `NEBIUS_CHAT_MODEL` |
 
-SDK client: `services/responder/src/pipeline.ts` (loads native only when explicitly enabled, otherwise agent first, then query fallback).
-
-**Required keys** (in `.env`):
-
-- `ROCKETRIDE_APIKEY` — from [rocketride.ai](https://rocketride.ai) (optional for local engine)
-- `ROCKETRIDE_URI` — `ws://localhost:5565` (local) or `https://api.rocketride.ai` (cloud)
-
-**Optional (agent pipeline — same pattern as [Cerberus](https://github.com/kvn8888/Cerberus)):**
-
-- `NEO4J_MCP_ENDPOINT` — neo4j-mcp HTTP bridge (default `http://localhost:8787/mcp`)
-- `RESCUEOPS_AGENT_PIPELINE=0` — skip agent; use query fallback only
-- `RESCUEOPS_NATIVE_PIPELINE=1` — try the native RocketRide pipe first; load failures or invalid answers fall back to the existing agent/query path
-
-**Docs in this repo:**
-
-- [RescueOps++ integration guide](.rocketride/docs/RESCUEOPS_INTEGRATION.md) — how this project uses RocketRide
-- [RocketRide agent docs](.rocketride/docs/) — official SDK/pipeline reference for coding assistants
-
-**Official:** [docs.rocketride.org](https://docs.rocketride.org/) · [GitHub](https://github.com/rocketride-org/rocketride-server) · [Discord](https://discord.gg/PMXrtenMsY)
+Implementation: `services/responder/src/pipeline.ts`.
 
 ## Butterbase (auth, DB, credits, AI gateway)
 
@@ -145,12 +125,7 @@ Four sponsor-called-out integrations, each gated behind an env flag that **defau
 | Integration | Prize(s) | Turn on with | What it does |
 | ----------- | -------- | ------------ | ------------ |
 | **Cognee → Neo4j** | Neo4j + Cognee | `docker compose --profile memory up`, `COGNEE_ENABLED=1` | The `memory` service cognifies the runbook corpus into a knowledge graph stored **in the same Neo4j** (distinct labels) and the responder recalls it at diagnosis time. Falls back to the built-in `runbook_vec` substrate when off. |
-| **RocketRide native tools** | RocketRide | `RESCUEOPS_NATIVE_PIPELINE=1` | Loads `rescueops-diagnose-native.pipe`, which reaches Neo4j via RocketRide's own `db_neo4j` component and adds `tool_butterbase` — all three tools running **inside** RocketRide. Falls through to the MCP agent pipe on any failure. |
 | **Cognee + Daytona memory** | Cognee + Daytona | `COGNEE_MEMORY_ENABLED=1` | Every shipped fix is remembered as a Cognee episode in Neo4j and recalled before future diagnoses — persistent agent memory that survives restarts and the disposable Daytona verify sandboxes. |
-| **Nebius inference** | Nebius | `LLM_PROVIDER=nebius` | Routes the RocketRide diagnosis LLM through Nebius Token Factory (OpenAI-compatible), on top of the embeddings it already powers. A Nebius Claude-Code proxy (point any CLI agent's OpenAI base URL at `NEBIUS_BASE_URL`) frees the coding agent from a single model provider. |
+| **Nebius inference** | Nebius | `LLM_PROVIDER=nebius` | Routes diagnosis LLM through Nebius Token Factory (OpenAI-compatible), on top of the embeddings it already powers. |
 
 See `.env.example` for every flag. The `memory` service is Python (Cognee is Python-native); the responder calls it over HTTP and degrades gracefully when it is absent.
-
-## Milestones
-
-Build specs live in `claude-code-prompt-m1` through `m8` at the repo root. M1 = target repo, M2 = code graph, M3 = RocketRide diagnosis, M4 = Daytona verify, M5 = Butterbase backend, M6 = ship PR, M7 = approval gate, M8 = Mission Control UI.
