@@ -29,6 +29,7 @@ import {
   recordIncidentAction,
   refundCredit,
   setApprovalStatus,
+  signInService,
   spendCredit,
   type ActionRow,
   type StoredIncidentRow,
@@ -168,8 +169,14 @@ app.get('/health', async () => {
 
 // Sync account row (subscription + demo credits) for the signed-in user.
 app.get('/account', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (!token) return { error: 'sign in first — Bearer token required' };
+  const token = await requireToken(request, reply);
+  if (!token) {
+    reply.code(401);
+    return {
+      error: 'service_auth_unavailable',
+      message: 'Sign in or set SERVICE_PASSWORD for the responder service account.',
+    };
+  }
   const account = await ensureAccount(token);
   return account;
 });
@@ -178,8 +185,14 @@ app.get('/account', async (request, reply) => {
 // Spends one credit (or returns the paywall) without any of the M6 ship side
 // effects — the real apply lives in POST /apply.
 app.post('/apply-stub', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (!token) return { error: 'sign in first — Bearer token required' };
+  const token = await requireToken(request, reply);
+  if (!token) {
+    reply.code(401);
+    return {
+      error: 'service_auth_unavailable',
+      message: 'Sign in or set SERVICE_PASSWORD for the responder service account.',
+    };
+  }
   try {
     const { remaining } = await spendCredit(token);
     return { status: 'ok', apply_credits: remaining };
@@ -263,18 +276,42 @@ async function runDiagnosis(candidates = 1): Promise<
 // M5: Butterbase persistence is keyed to the signed-in user's JWT. When the
 // app is configured a token is required; without config (pre-M5 dev) the
 // engine still runs, it just doesn't persist.
-function requireToken(request: { headers: Record<string, unknown> }, reply: { code: (n: number) => unknown }): string | null {
+//
+// Unauthenticated requests fall back to the service account. The token is
+// cached briefly so a chain of UI calls (diagnose → remediate → apply →
+// approve) doesn't re-sign-in on every hop.
+let serviceTokenCache: { token: string; expiresAt: number } | null = null;
+const SERVICE_TOKEN_TTL_MS = 10 * 60 * 1000;
+
+async function requireToken(
+  request: { headers: Record<string, unknown> },
+  reply: { code: (n: number) => unknown },
+): Promise<string | null> {
   const token = bearerToken(request.headers.authorization as string | undefined);
-  if (butterbaseConfigured() && !token) {
-    reply.code(401);
-    return null;
+  if (token) return token;
+  if (!butterbaseConfigured()) return null;
+
+  if (serviceTokenCache && serviceTokenCache.expiresAt > Date.now()) {
+    return serviceTokenCache.token;
   }
-  return token;
+
+  try {
+    const email = process.env.SERVICE_EMAIL ?? 'oncall@rescueops.dev';
+    const password = process.env.SERVICE_PASSWORD ?? 'Resc!ue0ps2026';
+    const serviceToken = await signInService(email, password);
+    serviceTokenCache = { token: serviceToken, expiresAt: Date.now() + SERVICE_TOKEN_TTL_MS };
+    log('auth_service_fallback', { email });
+    return serviceToken;
+  } catch (err) {
+    serviceTokenCache = null;
+    log('auth_service_fallback_failed', { error: String(err) });
+  }
+  reply.code(401);
+  return null;
 }
 
 app.post('/diagnose', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (butterbaseConfigured() && !token) return { error: 'sign in first — Bearer token required' };
+  const token = await requireToken(request, reply);
 
   const out = await runDiagnosis();
   if (out.status === 'incident' && token) {
@@ -456,8 +493,14 @@ async function shipVerifiedFix(
 // fixes park as a pending approval — no PR, no credit spent — until a human
 // decides via POST /approvals/:id.
 app.post('/apply', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (!token) return { error: 'sign in first — Bearer token required' };
+  const token = await requireToken(request, reply);
+  if (!token) {
+    reply.code(401);
+    return {
+      error: 'service_auth_unavailable',
+      message: 'Sign in or set SERVICE_PASSWORD for the responder service account.',
+    };
+  }
 
   const pending = await latestVerifiedAction(token);
   if (!pending) {
@@ -502,8 +545,14 @@ app.post('/apply', async (request, reply) => {
 // M7 Phase 2: decide a pending approval. approved → run the M6 ship;
 // denied → abort with no side effects (no PR, no credit).
 app.post('/approvals/:id', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (!token) return { error: 'sign in first — Bearer token required' };
+  const token = await requireToken(request, reply);
+  if (!token) {
+    reply.code(401);
+    return {
+      error: 'service_auth_unavailable',
+      message: 'Sign in or set SERVICE_PASSWORD for the responder service account.',
+    };
+  }
 
   const { id } = request.params as { id: string };
   const { decision } = (request.body ?? {}) as { decision?: string };
@@ -569,8 +618,7 @@ app.post('/approvals/:id', async (request, reply) => {
 //                        from the pre-installed snapshot            (Phase 2)
 //   {candidate_fixes}  → caller-supplied variants through the parallel loop
 app.post('/remediate', async (request, reply) => {
-  const token = requireToken(request, reply);
-  if (butterbaseConfigured() && !token) return { error: 'sign in first — Bearer token required' };
+  const token = await requireToken(request, reply);
 
   const body = (request.body ?? null) as {
     candidate_fix?: CandidateFix;

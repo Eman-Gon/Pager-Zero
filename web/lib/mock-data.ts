@@ -150,8 +150,13 @@ export const severityBreakdown = [
   { name: 'Low', value: 48, key: 'low' as Severity },
 ];
 
+// Open = still in the response flow (not yet shipped or resolved).
+const openIncidentCount = incidents.filter(
+  (i) => i.status !== 'shipped' && i.status !== 'resolved',
+).length;
+
 export const kpis = {
-  openIncidents: 2,
+  openIncidents: openIncidentCount,
   autoResolveRate: 0.86,
   medianMttrSeconds: 840,
   prsShippedWeek: 27,

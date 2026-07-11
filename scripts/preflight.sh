@@ -11,7 +11,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SENSOR_URL="${SENSOR_URL:-http://127.0.0.1:3003}"
 RESPONDER_URL="${RESPONDER_URL:-http://127.0.0.1:3004}"
-FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1:5173}"
+FRONTEND_URL="${FRONTEND_URL:-http://127.0.0.1:5174}"
 
 if [[ -f "$ROOT/.env" ]]; then
   set -a

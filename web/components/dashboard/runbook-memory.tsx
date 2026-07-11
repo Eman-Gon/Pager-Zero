@@ -21,8 +21,8 @@ export function RunbookMemory() {
           <ScrollText className="size-4" /> Runbook memory
         </CardTitle>
         <CardDescription>
-          Fix patterns the system has learned. GraphRAG means the agent searches this memory
-          through the Neo4j graph and cites the best match during diagnosis.
+          Fixes the system has already solved. When a similar bug shows up, the agent
+          looks here first and reuses the closest match.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid gap-3 sm:grid-cols-2">
@@ -42,7 +42,7 @@ export function RunbookMemory() {
               <span>· last cited {r.id}</span>
             </div>
             <p className="mt-2 text-xs leading-5 text-muted-foreground">
-              If this root cause appears again, the agent can reuse this pattern as supporting context.
+              If this bug happens again, the agent reuses this fix.
             </p>
           </div>
         ))}

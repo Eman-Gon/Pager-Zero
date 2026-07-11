@@ -42,7 +42,7 @@ function gatewayConfig(): { url: string; key: string; model: string } {
     return {
       url: (process.env.NEBIUS_BASE_URL ?? 'https://api.tokenfactory.nebius.com/v1').replace(/\/$/, ''),
       key: process.env.NEBIUS_API_KEY ?? '',
-      model: process.env.NEBIUS_CHAT_MODEL ?? 'meta-llama/Meta-Llama-3.1-70B-Instruct',
+      model: process.env.NEBIUS_CHAT_MODEL ?? 'meta-llama/Llama-3.3-70B-Instruct',
     };
   }
   return {

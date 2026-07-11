@@ -61,6 +61,19 @@ export function analyzeTarget(targetDir: string): CodeGraph {
   return { functions: [...fnInfo.values()], calls, tests, testsEdges };
 }
 
+// Remove the previously-built code graph (Function/Test nodes and their edges)
+// so a reload for a different target repo starts clean. Runbook and other nodes
+// are left untouched.
+export async function clearCodeGraph(driver: Driver): Promise<void> {
+  const session = openSession(driver);
+  try {
+    await session.run(`MATCH (n:Function) DETACH DELETE n`);
+    await session.run(`MATCH (n:Test) DETACH DELETE n`);
+  } finally {
+    await session.close();
+  }
+}
+
 export async function writeCodeGraph(driver: Driver, g: CodeGraph): Promise<void> {
   const session = openSession(driver);
   try {

@@ -1,263 +1,448 @@
 'use client';
 
 import * as React from 'react';
-import { Database, RefreshCcw, Search } from 'lucide-react';
+import { GitBranch, Move, RefreshCcw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { cn, formatNumber } from '@/lib/utils';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { cn } from '@/lib/utils';
 
-type PropertyValue = string | number | boolean | null | PropertyValue[] | { [key: string]: PropertyValue };
-
-interface Neo4jNodeRow {
+interface NodeRow {
   elementId: string;
   display: string;
   labels: string[];
-  properties: Record<string, PropertyValue>;
+  properties: Record<string, unknown>;
   incoming: number;
   outgoing: number;
 }
-
-interface LabelCount {
-  label: string;
-  count: number;
+interface Rel {
+  source: string;
+  target: string;
+  type: string;
 }
-
-interface NodesPayload {
-  total: number;
-  labels: LabelCount[];
-  nodes: Neo4jNodeRow[];
+interface Payload {
+  nodes: NodeRow[];
+  relationships: Rel[];
   error?: string;
 }
+type Point = { x: number; y: number };
 
-function compactValue(value: PropertyValue): string {
-  const text = typeof value === 'string' ? value : JSON.stringify(value);
-  return text.length > 92 ? `${text.slice(0, 89)}...` : text;
+const W = 820;
+const H = 520;
+
+function labelColor(label?: string): string {
+  switch ((label ?? '').toLowerCase()) {
+    case 'function':
+      return '#2dd4bf';
+    case 'test':
+      return '#38bdf8';
+    case 'runbook':
+      return '#fbbf24';
+    default:
+      return '#94a3b8';
+  }
 }
 
-function matchesQuery(node: Neo4jNodeRow, query: string): boolean {
-  const q = query.trim().toLowerCase();
-  if (!q) return true;
-  return `${node.display} ${node.elementId} ${node.labels.join(' ')} ${JSON.stringify(node.properties)}`
-    .toLowerCase()
-    .includes(q);
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
 }
 
-function labelTone(label: string): string {
-  const key = label.toLowerCase();
-  if (key === 'function') return 'border-primary/20 bg-primary/10 text-primary';
-  if (key === 'test') return 'border-sky-500/30 bg-sky-500/10 text-sky-400';
-  if (key === 'runbook') return 'border-warning/30 bg-warning/10 text-warning';
-  return 'border-border bg-muted text-muted-foreground';
+// Simple, stable circle layout — nodes are draggable from here.
+function circleLayout(nodes: NodeRow[]): Record<string, Point> {
+  const out: Record<string, Point> = {};
+  const cx = W / 2;
+  const cy = H / 2;
+  const r = Math.min(W, H) * 0.37;
+  nodes.forEach((node, i) => {
+    const a = (i / Math.max(1, nodes.length)) * Math.PI * 2 - Math.PI / 2;
+    out[node.elementId] = { x: cx + Math.cos(a) * r, y: cy + Math.sin(a) * r };
+  });
+  return out;
 }
 
 export function Neo4jNodes() {
-  const [data, setData] = React.useState<NodesPayload>({ total: 0, labels: [], nodes: [] });
-  const [label, setLabel] = React.useState('');
-  const [query, setQuery] = React.useState('');
+  const [nodes, setNodes] = React.useState<NodeRow[]>([]);
+  const [edges, setEdges] = React.useState<Rel[]>([]);
+  const [pos, setPos] = React.useState<Record<string, Point>>({});
   const [loading, setLoading] = React.useState(true);
   const [error, setError] = React.useState<string | null>(null);
   const [refreshKey, setRefreshKey] = React.useState(0);
+  const [selectedId, setSelectedId] = React.useState<string | null>(null);
+  const [diff, setDiff] = React.useState<{ file: string; name: string } | null>(null);
+
+  const svgRef = React.useRef<SVGSVGElement | null>(null);
+  const drag = React.useRef<{ id: string; offX: number; offY: number; sx: number; sy: number; moved: boolean } | null>(
+    null,
+  );
 
   React.useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    fetch(`/api/neo4j/nodes?label=${encodeURIComponent(label)}&limit=200`, {
-      signal: controller.signal,
-      cache: 'no-store',
-    })
+    fetch('/api/neo4j/nodes?limit=200', { signal: controller.signal, cache: 'no-store' })
       .then(async (res) => {
-        const payload = (await res.json()) as NodesPayload;
-        if (!res.ok) throw new Error(payload.error ?? `Neo4j request failed with ${res.status}`);
+        const payload = (await res.json()) as Payload;
+        if (!res.ok) throw new Error(payload.error ?? `Neo4j request failed (${res.status})`);
+        const ns = payload.nodes ?? [];
+        setNodes(ns);
+        setEdges(payload.relationships ?? []);
+        setPos(circleLayout(ns));
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : String(err));
+        setNodes([]);
+        setEdges([]);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [refreshKey]);
+
+  const toSvg = React.useCallback((clientX: number, clientY: number): Point => {
+    const svg = svgRef.current;
+    const ctm = svg?.getScreenCTM();
+    if (!svg || !ctm) return { x: 0, y: 0 };
+    const pt = svg.createSVGPoint();
+    pt.x = clientX;
+    pt.y = clientY;
+    const p = pt.matrixTransform(ctm.inverse());
+    return { x: p.x, y: p.y };
+  }, []);
+
+  const onNodeDown = (e: React.PointerEvent, id: string) => {
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture?.(e.pointerId);
+    const c = toSvg(e.clientX, e.clientY);
+    const p = pos[id] ?? { x: c.x, y: c.y };
+    drag.current = { id, offX: c.x - p.x, offY: c.y - p.y, sx: c.x, sy: c.y, moved: false };
+  };
+
+  const onMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    const c = toSvg(e.clientX, e.clientY);
+    if (Math.hypot(c.x - d.sx, c.y - d.sy) > 3) d.moved = true;
+    setPos((prev) => ({ ...prev, [d.id]: { x: clamp(c.x - d.offX, 26, W - 26), y: clamp(c.y - d.offY, 26, H - 26) } }));
+  };
+
+  const onUp = () => {
+    const d = drag.current;
+    if (!d) return;
+    if (!d.moved) setSelectedId((cur) => (cur === d.id ? null : d.id)); // a click (not a drag) selects
+    drag.current = null;
+  };
+
+  const selected = selectedId ? nodes.find((n) => n.elementId === selectedId) ?? null : null;
+  const selectedFile =
+    selected && typeof selected.properties.file === 'string' ? (selected.properties.file as string) : null;
+  const isFunction = selected?.labels.some((l) => l.toLowerCase() === 'function') ?? false;
+  const selectedBroken = selected
+    ? selected.properties.status === 'failing' || selected.properties.changed === true
+    : false;
+
+  const labelsPresent = Array.from(new Set(nodes.flatMap((n) => n.labels)));
+
+  return (
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          {loading ? 'Loading graph…' : `${nodes.length} nodes · ${edges.length} relationships`}
+          <span className="ml-2 inline-flex items-center gap-1 text-xs">
+            <Move className="size-3.5" /> drag to move · click for details
+          </span>
+        </p>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="gap-2"
+          disabled={loading}
+          onClick={() => setRefreshKey((key) => key + 1)}
+        >
+          <RefreshCcw className={cn('size-4', loading && 'animate-spin')} /> Refresh
+        </Button>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          {error ? (
+            <div className="p-5 text-sm text-destructive">{error}</div>
+          ) : loading ? (
+            <div className="flex min-h-56 items-center justify-center text-sm text-muted-foreground">Loading…</div>
+          ) : (
+            <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_300px]">
+              <div className="relative border-b lg:border-b-0 lg:border-r">
+                <svg
+                  ref={svgRef}
+                  viewBox={`0 0 ${W} ${H}`}
+                  className="h-[440px] w-full touch-none select-none sm:h-[520px]"
+                  onPointerMove={onMove}
+                  onPointerUp={onUp}
+                  onPointerLeave={onUp}
+                  onPointerDown={() => setSelectedId(null)}
+                >
+                  <g stroke="currentColor" className="text-border">
+                    {edges.map((edge, i) => {
+                      const a = pos[edge.source];
+                      const b = pos[edge.target];
+                      if (!a || !b) return null;
+                      const active = selectedId ? edge.source === selectedId || edge.target === selectedId : false;
+                      return (
+                        <line
+                          key={`${edge.source}-${edge.target}-${i}`}
+                          x1={a.x}
+                          y1={a.y}
+                          x2={b.x}
+                          y2={b.y}
+                          strokeWidth={active ? 2 : 1.25}
+                          opacity={selectedId && !active ? 0.15 : 0.55}
+                        />
+                      );
+                    })}
+                  </g>
+                  {nodes.map((node) => {
+                    const p = pos[node.elementId];
+                    if (!p) return null;
+                    const color = labelColor(node.labels[0]);
+                    const isSelected = node.elementId === selectedId;
+                    const dim = selectedId && !isSelected;
+                    const r = 11 + Math.min(9, node.incoming + node.outgoing);
+                    return (
+                      <g
+                        key={node.elementId}
+                        transform={`translate(${p.x} ${p.y})`}
+                        className="cursor-grab active:cursor-grabbing"
+                        opacity={dim ? 0.3 : 1}
+                        onPointerDown={(e) => onNodeDown(e, node.elementId)}
+                      >
+                        <circle
+                          r={r}
+                          fill={color}
+                          fillOpacity={0.9}
+                          stroke={isSelected ? 'currentColor' : color}
+                          strokeWidth={isSelected ? 3 : 1.5}
+                          className={isSelected ? 'text-foreground' : ''}
+                        />
+                        <text y={r + 13} textAnchor="middle" className="fill-foreground" fontSize={11} stroke="none">
+                          {node.display.length > 20 ? `${node.display.slice(0, 19)}…` : node.display}
+                        </text>
+                      </g>
+                    );
+                  })}
+                </svg>
+                <div className="pointer-events-none absolute left-3 top-3 flex flex-wrap gap-2">
+                  {labelsPresent.map((label) => (
+                    <span
+                      key={label}
+                      className="flex items-center gap-1.5 rounded-full border bg-background/80 px-2 py-0.5 text-xs backdrop-blur"
+                    >
+                      <span className="size-2.5 rounded-full" style={{ backgroundColor: labelColor(label) }} />
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="p-4">
+                {selected ? (
+                  <div className="flex flex-col gap-3">
+                    <div>
+                      <div className="break-words font-mono text-sm font-medium">{selected.display}</div>
+                      <div className="mt-1.5 flex flex-wrap gap-1.5">
+                        {selected.labels.map((l) => (
+                          <Badge
+                            key={l}
+                            variant="outline"
+                            style={{ borderColor: `${labelColor(l)}55`, color: labelColor(l) }}
+                            className="font-mono"
+                          >
+                            {l}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+
+                    <dl className="grid gap-2 text-sm">
+                      {selectedFile && (
+                        <div className="flex items-center justify-between gap-2">
+                          <dt className="text-muted-foreground">File</dt>
+                          <dd className="truncate font-mono text-xs">{selectedFile}</dd>
+                        </div>
+                      )}
+                      {isFunction && (
+                        <div className="flex items-center justify-between gap-2">
+                          <dt className="text-muted-foreground">Status</dt>
+                          <dd>
+                            <Badge
+                              variant="outline"
+                              className={cn(
+                                selectedBroken
+                                  ? 'border-destructive/30 bg-destructive/10 text-destructive'
+                                  : 'border-success/25 bg-success/10 text-success',
+                              )}
+                            >
+                              {selectedBroken ? 'Broken' : 'Healthy'}
+                            </Badge>
+                          </dd>
+                        </div>
+                      )}
+                      <div className="flex items-center justify-between gap-2">
+                        <dt className="text-muted-foreground">Connections</dt>
+                        <dd className="font-mono text-xs">
+                          {selected.incoming} in · {selected.outgoing} out
+                        </dd>
+                      </div>
+                    </dl>
+
+                    {selectedFile && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        className="mt-1 gap-2"
+                        onClick={() => setDiff({ file: selectedFile, name: selected.display })}
+                      >
+                        <GitBranch className="size-4" /> Compare broken vs fixed
+                      </Button>
+                    )}
+                  </div>
+                ) : (
+                  <div className="flex h-full min-h-40 flex-col items-center justify-center gap-2 text-center text-sm text-muted-foreground">
+                    <Move className="size-5" />
+                    <p>Drag a node to move it. Click a node to see its details.</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Dialog
+        open={diff != null}
+        onOpenChange={(open) => {
+          if (!open) setDiff(null);
+        }}
+      >
+        <DialogContent className="max-h-[88vh] w-[94vw] max-w-5xl overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <GitBranch className="size-4" /> Broken vs fixed{diff ? ` — ${diff.name}` : ''}
+            </DialogTitle>
+          </DialogHeader>
+          {diff && <SourceDiff file={diff.file} />}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function DiffColumn({
+  title,
+  tone,
+  code,
+  changed,
+}: {
+  title: string;
+  tone: 'broken' | 'fixed';
+  code: string | null;
+  changed: Set<number>;
+}) {
+  const lines = (code ?? '').split('\n');
+  return (
+    <div className="min-w-0 overflow-hidden rounded-lg border">
+      <div
+        className={cn(
+          'border-b px-3 py-1.5 text-xs font-medium',
+          tone === 'broken' ? 'bg-destructive/10 text-destructive' : 'bg-success/10 text-success',
+        )}
+      >
+        {title}
+      </div>
+      {code == null ? (
+        <div className="p-3 text-xs text-muted-foreground">Not available.</div>
+      ) : (
+        <div className="overflow-x-auto scrollbar-thin">
+          <pre className="min-w-max text-xs leading-5">
+            {lines.map((line, i) => (
+              <div
+                key={i}
+                className={cn('flex', changed.has(i) && (tone === 'broken' ? 'bg-destructive/15' : 'bg-success/15'))}
+              >
+                <span className="w-9 shrink-0 select-none px-2 text-right text-muted-foreground/60">{i + 1}</span>
+                <code className="whitespace-pre px-2">{line || ' '}</code>
+              </div>
+            ))}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SourceDiff({ file }: { file: string }) {
+  const [data, setData] = React.useState<{ broken: string | null; fixed: string | null; identical: boolean } | null>(
+    null,
+  );
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError(null);
+    setData(null);
+    fetch(`/api/source?file=${encodeURIComponent(file)}`, { signal: controller.signal, cache: 'no-store' })
+      .then(async (res) => {
+        const payload = (await res.json()) as {
+          broken: string | null;
+          fixed: string | null;
+          identical: boolean;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(payload.error ?? `Source request failed (${res.status})`);
         setData(payload);
       })
       .catch((err) => {
         if (controller.signal.aborted) return;
-        setData({ total: 0, labels: [], nodes: [] });
         setError(err instanceof Error ? err.message : String(err));
       })
       .finally(() => {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [label, refreshKey]);
+  }, [file]);
 
-  const visible = React.useMemo(() => data.nodes.filter((node) => matchesQuery(node, query)), [data.nodes, query]);
-  const visibleDegree = visible.reduce((sum, node) => sum + node.incoming + node.outgoing, 0);
+  const changed = React.useMemo(() => {
+    const set = new Set<number>();
+    if (!data) return set;
+    const a = (data.broken ?? '').split('\n');
+    const b = (data.fixed ?? '').split('\n');
+    for (let i = 0; i < Math.max(a.length, b.length); i += 1) {
+      if ((a[i] ?? '') !== (b[i] ?? '')) set.add(i);
+    }
+    return set;
+  }, [data]);
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <MetricCard
-          label="Total nodes"
-          value={formatNumber(data.total)}
-          description="All graph records currently returned from Neo4j."
-        />
-        <MetricCard
-          label="Visible"
-          value={formatNumber(visible.length)}
-          description="Rows left after the selected label and search filters."
-        />
-        <MetricCard
-          label="Labels"
-          value={formatNumber(data.labels.length)}
-          description="Node types, such as Function, Test, or Runbook."
-        />
-        <MetricCard
-          label="Visible degree"
-          value={formatNumber(visibleDegree)}
-          description="Total incoming and outgoing relationships on visible rows."
-        />
-      </div>
-
-      <Card>
-        <CardHeader className="gap-3">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Database className="size-4" /> Neo4j nodes
-              </CardTitle>
-              <CardDescription>
-                Live graph inventory from the configured Neo4j database. Use labels to switch
-                between node types and search to find specific functions or runbooks.
-              </CardDescription>
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setRefreshKey((key) => key + 1)}
-              disabled={loading}
-              className="gap-2 self-start"
-            >
-              <RefreshCcw className={cn('size-4', loading && 'animate-spin')} />
-              Refresh
-            </Button>
-          </div>
-
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              <Button type="button" size="sm" variant={label === '' ? 'default' : 'outline'} onClick={() => setLabel('')}>
-                All
-              </Button>
-              {data.labels.map((item) => (
-                <Button
-                  type="button"
-                  size="sm"
-                  key={item.label}
-                  variant={label === item.label ? 'default' : 'outline'}
-                  onClick={() => setLabel(item.label)}
-                  className="gap-2"
-                >
-                  {item.label}
-                  <span className="font-mono text-xs opacity-65">{item.count}</span>
-                </Button>
-              ))}
-            </div>
-            <div className="relative min-w-0 lg:w-80">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search nodes"
-                className="pl-9"
-              />
-            </div>
-          </div>
-        </CardHeader>
-
-        <CardContent className="p-0">
-          {error ? (
-            <div className="p-5 text-sm text-destructive">{error}</div>
-          ) : loading ? (
-            <div className="flex min-h-56 items-center justify-center text-sm text-muted-foreground">
-              Loading Neo4j nodes...
-            </div>
-          ) : visible.length ? (
-            <div className="overflow-x-auto scrollbar-thin">
-              <table className="w-full min-w-[980px] text-sm">
-                <thead>
-                  <tr className="border-y text-left text-xs uppercase text-muted-foreground">
-                    <th className="px-5 py-2.5 font-medium" title="The graph record name and Neo4j element ID.">Node</th>
-                    <th className="px-3 py-2.5 font-medium" title="The type or types assigned to this node.">Labels</th>
-                    <th className="px-3 py-2.5 font-medium" title="Incoming and outgoing relationship counts.">Degree</th>
-                    <th className="px-3 py-2.5 font-medium" title="Stored fields on this node.">Properties</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {visible.map((node) => {
-                    const properties = Object.entries(node.properties);
-                    return (
-                      <tr key={node.elementId} className="border-b align-top last:border-0 hover:bg-accent/40">
-                        <td className="max-w-xs px-5 py-3">
-                          <div className="font-mono font-medium break-words">{node.display}</div>
-                          <div className="mt-1 break-all font-mono text-xs text-muted-foreground">{node.elementId}</div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-1.5">
-                            {node.labels.map((item) => (
-                              <Badge key={item} variant="outline" className={cn('font-mono', labelTone(item))}>
-                                {item}
-                              </Badge>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="flex flex-wrap gap-1.5">
-                            <Badge variant="secondary" className="font-mono">{node.incoming} in</Badge>
-                            <Badge variant="secondary" className="font-mono">{node.outgoing} out</Badge>
-                          </div>
-                        </td>
-                        <td className="px-3 py-3">
-                          <div className="grid max-w-2xl gap-1.5">
-                            {properties.length ? (
-                              properties.slice(0, 8).map(([key, value]) => (
-                                <div key={key} className="grid gap-2 sm:grid-cols-[120px_minmax(0,1fr)]">
-                                  <span className="break-words text-xs uppercase text-muted-foreground">{key}</span>
-                                  <code className="break-words text-xs text-muted-foreground">{compactValue(value)}</code>
-                                </div>
-                              ))
-                            ) : (
-                              <span className="text-muted-foreground">No properties</span>
-                            )}
-                            {properties.length > 8 && (
-                              <span className="text-xs text-muted-foreground">+{properties.length - 8} more</span>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <div className="p-5 text-sm text-muted-foreground">No nodes match this filter.</div>
-          )}
-        </CardContent>
-      </Card>
+    <div className="flex flex-col gap-3">
+      <code className="w-fit rounded bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">{file}</code>
+      {loading ? (
+        <div className="text-sm text-muted-foreground">Loading source…</div>
+      ) : error ? (
+        <div className="text-sm text-destructive">{error}</div>
+      ) : data?.identical ? (
+        <div className="rounded-lg border border-success/25 bg-success/10 px-4 py-3 text-sm text-success">
+          This file matches the clean baseline — no bug in this function right now. Click “Break production” to inject one.
+        </div>
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <DiffColumn title="Broken · current target-repo" tone="broken" code={data?.broken ?? null} changed={changed} />
+          <DiffColumn title="Fixed · good baseline" tone="fixed" code={data?.fixed ?? null} changed={changed} />
+        </div>
+      )}
     </div>
-  );
-}
-
-function MetricCard({
-  label,
-  value,
-  description,
-}: {
-  label: string;
-  value: string;
-  description: string;
-}) {
-  return (
-    <Card>
-      <CardContent className="p-5">
-        <div className="text-sm text-muted-foreground">{label}</div>
-        <div className="mt-2 text-3xl font-semibold tabular-nums">{value}</div>
-        <p className="mt-1 min-h-10 text-xs leading-5 text-muted-foreground">{description}</p>
-      </CardContent>
-    </Card>
   );
 }

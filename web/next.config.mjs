@@ -4,6 +4,7 @@ const RESPONDER_URL = process.env.NEXT_PUBLIC_RESPONDER_URL ?? 'http://127.0.0.1
 
 const nextConfig = {
   reactStrictMode: true,
+  distDir: process.env.NEXT_DIST_DIR ?? '.next',
   // Proxy the two backend services in local dev so the browser can call
   // relative /sensor and /responder paths without CORS. In a hosted/static
   // deploy, point the NEXT_PUBLIC_* URLs at the public backends instead.

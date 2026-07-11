@@ -61,9 +61,17 @@ export function CommandMenu() {
             <LayoutDashboard />
             Overview
           </CommandItem>
+          <CommandItem onSelect={() => go('/incidents/start')}>
+            <Siren />
+            Incident
+          </CommandItem>
           <CommandItem onSelect={() => go('/incidents')}>
             <Siren />
             Incident queue
+          </CommandItem>
+          <CommandItem onSelect={() => go('/incidents/chain')}>
+            <Siren />
+            Open chain
           </CommandItem>
           <CommandItem onSelect={() => go('/trends')}>
             <Activity />

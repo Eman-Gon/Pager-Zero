@@ -18,9 +18,33 @@ import { ThemeToggle } from '@/components/theme-toggle';
 import { CommandMenu } from '@/components/command-menu';
 import { kpis } from '@/lib/mock-data';
 
-const NAV = [
+type NavChild = {
+  href: string;
+  label: string;
+  badge?: number;
+  exact?: boolean;
+};
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  children?: NavChild[];
+  matchPrefix?: string;
+};
+
+const NAV: NavItem[] = [
   { href: '/', label: 'Overview', icon: LayoutDashboard },
-  { href: '/incidents', label: 'Incident queue', icon: Siren },
+  {
+    href: '/incidents/start',
+    label: 'Incident',
+    icon: Siren,
+    matchPrefix: '/incidents',
+    children: [
+      { href: '/incidents', label: 'Incident queue', badge: kpis.openIncidents, exact: true },
+      { href: '/incidents/chain', label: 'Open chain', exact: false },
+    ],
+  },
   { href: '/trends', label: 'Trends & MTTR', icon: Activity },
   { href: '/neo4j', label: 'Neo4j nodes', icon: Database },
   { href: '/runbooks', label: 'Runbook memory', icon: ScrollText },
@@ -55,6 +79,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (href === '/') return pathname === '/';
     return pathname === href || pathname.startsWith(`${href}/`);
   };
+  const activeChild = (child: NavChild) =>
+    child.exact ? pathname === child.href : active(child.href);
+  const itemActive = (item: NavItem) =>
+    (item.matchPrefix ? pathname.startsWith(item.matchPrefix) : active(item.href)) ||
+    Boolean(item.children?.some((child) => activeChild(child)));
+  const incidentNav = NAV.find((item) => item.label === 'Incident');
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">
@@ -72,24 +102,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Separator />
         <nav className="mt-3 flex flex-col gap-1">
           {NAV.map((n) => (
-            <Link
-              key={n.href}
-              href={n.href}
-              className={cn(
-                'group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
-                active(n.href)
-                  ? 'border-primary/25 bg-primary/10 text-primary shadow-sm'
-                  : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground',
-              )}
-            >
-              <n.icon className="size-4 shrink-0" />
-              {n.label}
-              {n.href === '/incidents' && kpis.openIncidents > 0 && (
-                <Badge variant="secondary" className="ml-auto tabular-nums">
-                  {kpis.openIncidents}
-                </Badge>
-              )}
-            </Link>
+            <div key={n.href} className="space-y-1">
+              <Link
+                href={n.href}
+                className={cn(
+                  'group flex items-center gap-3 rounded-lg border px-3 py-2.5 text-sm font-medium transition-colors',
+                  itemActive(n)
+                    ? 'border-primary/25 bg-primary/10 text-primary shadow-sm'
+                    : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground',
+                )}
+              >
+                <n.icon className="size-4 shrink-0" />
+                {n.label}
+              </Link>
+              {n.children?.map((child) => (
+                <Link
+                  key={child.href}
+                  href={child.href}
+                  className={cn(
+                    'ml-8 flex items-center gap-2 rounded-md border px-2.5 py-2 text-xs font-medium transition-colors',
+                    activeChild(child)
+                      ? 'border-primary/25 bg-primary/10 text-primary'
+                      : 'border-transparent text-muted-foreground hover:border-border hover:bg-muted/50 hover:text-foreground',
+                  )}
+                >
+                  <span className="size-1.5 rounded-full bg-current/60" />
+                  {child.label}
+                  {typeof child.badge === 'number' && child.badge > 0 && (
+                    <Badge variant="secondary" className="ml-auto tabular-nums">
+                      {child.badge}
+                    </Badge>
+                  )}
+                </Link>
+              ))}
+            </div>
           ))}
         </nav>
         <div className="mt-auto rounded-lg border border-success/25 bg-success/10 p-3 text-xs text-muted-foreground">
@@ -146,6 +192,29 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
           ))}
         </nav>
+        {incidentNav?.children && itemActive(incidentNav) && (
+          <nav className="flex gap-1 overflow-x-auto bg-card/50 px-3 py-2 md:hidden">
+            {incidentNav.children.map((child) => (
+              <Link
+                key={child.href}
+                href={child.href}
+                className={cn(
+                  'inline-flex shrink-0 items-center gap-2 rounded-md border px-3 py-1.5 text-xs font-medium',
+                  activeChild(child)
+                    ? 'border-primary/25 bg-primary/10 text-primary'
+                    : 'border-transparent text-muted-foreground',
+                )}
+              >
+                {child.label}
+                {typeof child.badge === 'number' && child.badge > 0 && (
+                  <Badge variant="secondary" className="tabular-nums">
+                    {child.badge}
+                  </Badge>
+                )}
+              </Link>
+            ))}
+          </nav>
+        )}
 
         <main className="flex-1 px-4 py-6 md:px-6 lg:px-8">{children}</main>
       </div>

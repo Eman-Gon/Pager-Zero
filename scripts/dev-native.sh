@@ -1,29 +1,34 @@
 #!/usr/bin/env bash
-# Run sensor, responder, and frontend on the host — no Docker required.
+# Run sensor, responder, and Mission Control (web/) on the host — no Docker required.
 # Neo4j: uses Aura credentials from .env (NEO4J_URI / NEO4J_USERNAME / …).
 #
 # Usage:
 #   ./scripts/dev-native.sh          # start all services
 #   ./scripts/dev-native.sh stop     # stop background services
 #   ./scripts/dev-native.sh status   # show what's running
+#
+#   LEGACY_FRONTEND=1 ./scripts/dev-native.sh   # also start the old frontend/ on :5173
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PID_DIR="$ROOT/.dev"
 SENSOR_PID="$PID_DIR/sensor.pid"
 RESPONDER_PID="$PID_DIR/responder.pid"
+WEB_PID="$PID_DIR/web.pid"
 FRONTEND_PID="$PID_DIR/frontend.pid"
 SENSOR_LOG="$PID_DIR/sensor.log"
 RESPONDER_LOG="$PID_DIR/responder.log"
+WEB_LOG="$PID_DIR/web.log"
 FRONTEND_LOG="$PID_DIR/frontend.log"
 TARGET="${PATIENT_REPO:-$ROOT/target-repo}"
-# Resolve a relative PATIENT_REPO (e.g. patients/claimflow) against the repo
+# Resolve a relative PATIENT_REPO (e.g. target-repo) against the repo
 # root — the services run from their own cwd and would otherwise miss it.
 case "$TARGET" in
   /*) ;;
   *) TARGET="$ROOT/$TARGET" ;;
 esac
 FRONTEND_ENV="$ROOT/frontend/.env.local"
+LEGACY_FRONTEND="${LEGACY_FRONTEND:-0}"
 
 port_owner() {
   lsof -nP -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | awk 'NR==2 {print $1, $2}'
@@ -43,12 +48,13 @@ stop_pid() {
 }
 
 stop_all() {
+  stop_pid "$WEB_PID"
   stop_pid "$FRONTEND_PID"
   stop_pid "$RESPONDER_PID"
   stop_pid "$SENSOR_PID"
   # The pidfiles hold the launcher pids; npm's node children can survive them.
   # Sweep the service ports so a restart never races a half-dead process.
-  for port in 3003 3004 5173; do
+  for port in 3003 3004 5173 5174; do
     lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR>1 {print $2}' | sort -u | while read -r pid; do
       kill "$pid" 2>/dev/null || true
     done
@@ -58,12 +64,12 @@ stop_all() {
 
 status_all() {
   echo "=== ports ==="
-  for port in 3003 3004 5173; do
+  for port in 3003 3004 5173 5174; do
     owner=$(port_owner "$port" || true)
     echo "  :$port  ${owner:-free}"
   done
   echo "=== native pids ==="
-  for entry in "sensor:$SENSOR_PID" "responder:$RESPONDER_PID" "frontend:$FRONTEND_PID"; do
+  for entry in "sensor:$SENSOR_PID" "responder:$RESPONDER_PID" "web:$WEB_PID" "frontend:$FRONTEND_PID"; do
     label=${entry%%:*}
     file=${entry#*:}
     if [[ -f "$file" ]] && kill -0 "$(cat "$file")" 2>/dev/null; then
@@ -75,6 +81,7 @@ status_all() {
   echo "=== logs ==="
   echo "  $SENSOR_LOG"
   echo "  $RESPONDER_LOG"
+  echo "  $WEB_LOG"
   echo "  $FRONTEND_LOG"
 }
 
@@ -165,8 +172,8 @@ EOF
 }
 
 wait_for() {
-  local url=$1 label=$2
-  for _ in $(seq 1 30); do
+  local url=$1 label=$2 tries=${3:-30}
+  for _ in $(seq 1 "$tries"); do
     if curl -sf "$url" >/dev/null 2>&1; then
       echo "$label ready"
       return 0
@@ -184,13 +191,14 @@ start_all() {
   sync_frontend_env
 
   if [[ ! -d "$TARGET" ]]; then
-    echo "Missing $TARGET — create or clone the patient repo there first."
+    echo "Missing $TARGET — load a patient first: ./scripts/load-patient.sh claimflow"
     exit 1
   fi
 
   install_if_needed "$ROOT/services/sensor"
   install_if_needed "$ROOT/services/responder"
-  install_if_needed "$ROOT/frontend"
+  install_if_needed "$ROOT/web"
+  [[ "$LEGACY_FRONTEND" == "1" ]] && install_if_needed "$ROOT/frontend"
   install_if_needed "$TARGET"
 
   stop_all 2>/dev/null || true
@@ -205,38 +213,64 @@ start_all() {
 
   wait_for "http://localhost:3004/connection" "responder"
 
-  owner=$(port_owner 5173 || true)
+  # Mission Control (web/, Next.js dev on :5174). The web app proxies
+  # /sensor and /responder via next.config.mjs rewrites, and its
+  # /api/neo4j route reads Neo4j credentials from the repo-root .env.
+  owner=$(port_owner 5174 || true)
   if [[ -n "$owner" ]]; then
-    echo "Frontend already listening on :5173 ($owner) — leaving it running."
+    echo "Mission Control already listening on :5174 ($owner) — leaving it running."
   else
-    local flauncher="$PID_DIR/launch-frontend.sh"
-    cat >"$flauncher" <<EOF
+    local wlauncher="$PID_DIR/launch-web.sh"
+    cat >"$wlauncher" <<EOF
+#!/usr/bin/env bash
+set -euo pipefail
+cd $(printf '%q' "$ROOT/web")
+exec npm run dev
+EOF
+    chmod +x "$wlauncher"
+    : >"$WEB_LOG"
+    nohup "$wlauncher" >>"$WEB_LOG" 2>&1 < /dev/null &
+    echo $! >"$WEB_PID"
+    disown "$(cat "$WEB_PID")" 2>/dev/null || true
+    echo "Started Mission Control (web) on :5174 (pid $(cat "$WEB_PID"), log $WEB_LOG)"
+    wait_for "http://127.0.0.1:5174" "mission control" 60 || true
+  fi
+
+  if [[ "$LEGACY_FRONTEND" == "1" ]]; then
+    owner=$(port_owner 5173 || true)
+    if [[ -n "$owner" ]]; then
+      echo "Legacy frontend already listening on :5173 ($owner) — leaving it running."
+    else
+      local flauncher="$PID_DIR/launch-frontend.sh"
+      cat >"$flauncher" <<EOF
 #!/usr/bin/env bash
 set -euo pipefail
 cd $(printf '%q' "$ROOT/frontend")
 exec npm run dev -- -H 0.0.0.0 -p 5173
 EOF
-    chmod +x "$flauncher"
-    : >"$FRONTEND_LOG"
-    nohup "$flauncher" >>"$FRONTEND_LOG" 2>&1 < /dev/null &
-    echo $! >"$FRONTEND_PID"
-    disown "$(cat "$FRONTEND_PID")" 2>/dev/null || true
-    echo "Started frontend on :5173 (pid $(cat "$FRONTEND_PID"), log $FRONTEND_LOG)"
-    sleep 2
+      chmod +x "$flauncher"
+      : >"$FRONTEND_LOG"
+      nohup "$flauncher" >>"$FRONTEND_LOG" 2>&1 < /dev/null &
+      echo $! >"$FRONTEND_PID"
+      disown "$(cat "$FRONTEND_PID")" 2>/dev/null || true
+      echo "Started legacy frontend on :5173 (pid $(cat "$FRONTEND_PID"), log $FRONTEND_LOG)"
+      sleep 2
+    fi
   fi
 
   echo ""
-  echo "Mission Control → http://127.0.0.1:5173"
-  echo "  (use 127.0.0.1 — http://localhost:5173 can fail on IPv6)"
+  echo "Mission Control → http://127.0.0.1:5174"
+  echo "  (use 127.0.0.1 — http://localhost:5174 can fail on IPv6)"
   echo "Sensor          → http://127.0.0.1:3003/incident"
   echo "Responder       → http://127.0.0.1:3004/health (LLM: /connection)"
   echo "Neo4j shell     → ./scripts/cypher-shell.sh"
   echo ""
-  echo "Seed incident   → ./scripts/break.sh"
+  echo "Seed incident   → ./scripts/break.sh   (or the UI 'Break production' button)"
+  echo "Restore         → ./scripts/reset.sh   (or the UI 'Restore' button)"
   echo "Stop everything → ./scripts/dev-native.sh stop"
   echo "Logs            → tail -f $PID_DIR/*.log"
   if [[ "$(uname -s)" == "Darwin" ]]; then
-    open "http://127.0.0.1:5173" 2>/dev/null || true
+    open "http://127.0.0.1:5174" 2>/dev/null || true
   fi
 
   # Keep this terminal session alive so services are not orphaned/killed.
@@ -245,7 +279,7 @@ EOF
     echo "Services running — leave this tab open (Ctrl+C to stop)."
     trap 'stop_all; exit 0' INT TERM
     while true; do
-      for f in "$SENSOR_PID" "$RESPONDER_PID" "$FRONTEND_PID"; do
+      for f in "$SENSOR_PID" "$RESPONDER_PID" "$WEB_PID"; do
         if [[ -f "$f" ]] && ! kill -0 "$(cat "$f")" 2>/dev/null; then
           echo "A service exited unexpectedly — check logs in $PID_DIR/"
           stop_all

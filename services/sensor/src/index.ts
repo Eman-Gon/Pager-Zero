@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import type { Driver } from 'neo4j-driver';
-import { analyzeTarget, writeCodeGraph } from './codegraph.js';
+import { analyzeTarget, clearCodeGraph, writeCodeGraph } from './codegraph.js';
 import { log } from './log.js';
 import { createDriver, openSession } from './neo4j-config.js';
 import { ensureTargetDeps, gitHead, scan } from './scan.js';
@@ -26,14 +26,22 @@ async function connectWithRetry(): Promise<Driver> {
 
 const driver = await connectWithRetry();
 
-const graph = analyzeTarget(TARGET_DIR);
-await writeCodeGraph(driver, graph);
-log('graph_built', {
-  functions: graph.functions.map((f) => f.name),
-  calls: graph.calls.length,
-  tests: graph.tests.length,
-  tests_edges: graph.testsEdges.length,
-});
+// Build the code graph from the current target repo. Clearing first makes this
+// safe to call again at runtime (via POST /graph/reload) after a new patient
+// repo is loaded, so the graph reflects the new source without a restart.
+async function buildGraph(): Promise<void> {
+  await clearCodeGraph(driver);
+  const graph = analyzeTarget(TARGET_DIR);
+  await writeCodeGraph(driver, graph);
+  log('graph_built', {
+    functions: graph.functions.map((f) => f.name),
+    calls: graph.calls.length,
+    tests: graph.tests.length,
+    tests_edges: graph.testsEdges.length,
+  });
+}
+
+await buildGraph();
 
 const app = Fastify();
 registerCors(app);
@@ -42,6 +50,17 @@ registerCors(app);
 let lastHead: string | null = null;
 let lastScanAt: string | null = null;
 let lastScanError: string | null = null;
+
+// Rebuild the code graph after a new patient repo has been loaded into the
+// target dir. Resetting scan state forces the loop to re-scan on its next tick.
+app.post('/graph/reload', async () => {
+  await buildGraph();
+  lastHead = null;
+  lastScanAt = null;
+  lastScanError = null;
+  log('graph_reloaded', {});
+  return { status: 'reloaded' };
+});
 
 function countValue(value: unknown): number {
   if (typeof value === 'number') return value;

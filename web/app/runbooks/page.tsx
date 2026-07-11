@@ -7,7 +7,7 @@ export default function RunbooksPage() {
     <AppShell>
       <PageFrame
         title="Runbook Memory"
-        subtitle="Reusable fix patterns the agent can cite during diagnosis."
+        subtitle="Past fixes the agent remembers and reuses on new incidents."
       >
         <RunbookMemory />
       </PageFrame>

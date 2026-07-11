@@ -7,7 +7,7 @@ export default function Neo4jPage() {
     <AppShell>
       <PageFrame
         title="Neo4j Nodes"
-        subtitle="Code graph inventory for functions, tests, runbooks, and their relationships."
+        subtitle="Code graph nodes — drag to rearrange, click a node for its details."
       >
         <Neo4jNodes />
       </PageFrame>

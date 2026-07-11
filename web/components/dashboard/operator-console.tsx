@@ -31,8 +31,16 @@ interface HealthPayload {
 
 type ActionKey = 'detect' | 'diagnose' | 'verify' | 'apply';
 
-const ACCESS_TOKEN_KEY = 'rescueops_access_token';
 const LAST_APPROVAL_ID_KEY = 'rescueops_last_approval_id';
+const FALLBACK_REPOS: RepoOption[] = [
+  { id: 'target-repo', label: 'target-repo', path: 'target-repo', active: true },
+  { id: 'billing', label: 'billing', path: 'patients/billing', active: false },
+  { id: 'claimflow', label: 'claimflow', path: 'patients/claimflow', active: false },
+  { id: 'eligibility', label: 'eligibility', path: 'patients/eligibility', active: false },
+  { id: 'identity', label: 'identity', path: 'patients/identity', active: false },
+  { id: 'pricing', label: 'pricing', path: 'patients/pricing', active: false },
+  { id: 'riskgate', label: 'riskgate', path: 'patients/riskgate', active: false },
+];
 
 const ACTIONS: {
   key: ActionKey;
@@ -103,21 +111,10 @@ function summarize(path: string, status: number, body: unknown): string {
   return `${path} returned HTTP ${status}`;
 }
 
-function tokenExpired(token: string, skewSeconds = 30): boolean {
-  try {
-    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    const { exp } = JSON.parse(atob(b64)) as { exp?: number };
-    return typeof exp === 'number' && exp * 1000 <= Date.now() + skewSeconds * 1000;
-  } catch {
-    return false;
-  }
-}
-
 export function OperatorConsole({ compact = false }: { compact?: boolean }) {
   const [repos, setRepos] = React.useState<RepoOption[]>([]);
   const [repoId, setRepoId] = React.useState('');
   const [health, setHealth] = React.useState<HealthPayload | null>(null);
-  const [token, setToken] = React.useState('');
   const [incident, setIncident] = React.useState<IncidentPayload | null>(null);
   const [busy, setBusy] = React.useState<ActionKey | null>(null);
   const [message, setMessage] = React.useState<string | null>(null);
@@ -125,7 +122,6 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
 
   const activeRepo = repos.find((repo) => repo.id === repoId) ?? repos.find((repo) => repo.active) ?? repos[0];
   const patientRepos = repos.filter((repo) => repo.id !== 'target-repo');
-  const authReady = Boolean(token) && !tokenExpired(token);
   const sensorReady = health?.sensor === true;
   const incidentStats = [
     {
@@ -156,25 +152,18 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
       .then(async (res) => {
         const payload = (await res.json()) as { active: string | null; repos: RepoOption[] };
         if (!alive) return;
-        setRepos(payload.repos);
-        setRepoId(payload.active ?? payload.repos[0]?.id ?? '');
+        const nextRepos = payload.repos?.length ? payload.repos : FALLBACK_REPOS;
+        setRepos(nextRepos);
+        setRepoId(payload.active ?? nextRepos[0]?.id ?? '');
       })
       .catch(() => {
         if (!alive) return;
-        setRepos([]);
+        setRepos(FALLBACK_REPOS);
+        setRepoId(FALLBACK_REPOS[0].id);
       });
     return () => {
       alive = false;
     };
-  }, []);
-
-  React.useEffect(() => {
-    try {
-      const saved = localStorage.getItem(ACCESS_TOKEN_KEY) ?? '';
-      if (saved && !tokenExpired(saved)) setToken(saved);
-    } catch {
-      /* localStorage can be unavailable in private windows. */
-    }
   }, []);
 
   const refreshHealth = React.useCallback(async () => {
@@ -199,12 +188,8 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
         if (action.key === 'detect' && latestHealth?.sensor === false) {
           throw new Error('Sensor backend is offline. Start the sensor on :3003, then run Detect again.');
         }
-        if (action.key !== 'detect' && !authReady) {
-          throw new Error('Diagnose, Verify, and Ship need a signed-in Bearer token.');
-        }
         const res = await fetch(action.path, {
           method: action.method,
-          headers: action.key !== 'detect' ? { Authorization: `Bearer ${token}` } : undefined,
           cache: 'no-store',
         });
         const body = await res.json().catch(() => null);
@@ -230,7 +215,7 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
         setBusy(null);
       }
     },
-    [authReady, refreshHealth, token],
+    [refreshHealth],
   );
 
   React.useEffect(() => {
@@ -276,10 +261,12 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
               onChange={(event) => setRepoId(event.target.value)}
               className="h-11 min-w-0 rounded-lg border border-input bg-card px-3 text-sm text-foreground shadow-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
             >
-              {activeRepo ? (
-                <option value={activeRepo.id}>
-                  {activeRepo.label} · {activeRepo.path}
-                </option>
+              {repos.length ? (
+                repos.map((repo) => (
+                  <option key={repo.id} value={repo.id}>
+                    {repo.label} · {repo.path}
+                  </option>
+                ))
               ) : (
                 <option value="">No repositories found</option>
               )}
@@ -297,7 +284,7 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
                 variant="outline"
                 className={cn('h-11 justify-start gap-2 rounded-lg border px-3 shadow-sm', action.tone)}
                 onClick={() => run(action)}
-                disabled={busy !== null || !activeRepo || (action.key === 'detect' ? sensorReady === false : !authReady)}
+                disabled={busy !== null || !activeRepo || (action.key === 'detect' && sensorReady === false)}
               >
                 {busy === action.key ? (
                   <RefreshCcw className={cn('size-4 animate-spin', action.iconTone)} />
@@ -310,25 +297,7 @@ export function OperatorConsole({ compact = false }: { compact?: boolean }) {
           </div>
         </div>
 
-        <div className="grid gap-4 rounded-lg border border-border/80 bg-muted/20 p-4 text-sm lg:grid-cols-[1fr_1fr]">
-          <label className="grid gap-2 text-sm font-medium">
-            <span>Bearer token</span>
-            <input
-              value={token}
-              onChange={(event) => {
-                const nextToken = event.target.value.trim();
-                setToken(nextToken);
-                try {
-                  if (nextToken) localStorage.setItem(ACCESS_TOKEN_KEY, nextToken);
-                  else localStorage.removeItem(ACCESS_TOKEN_KEY);
-                } catch {
-                  /* localStorage can be unavailable in private windows. */
-                }
-              }}
-              placeholder="Paste a signed-in access token for Diagnose / Verify / Ship"
-              className="h-11 rounded-lg border border-input bg-card px-3 text-sm shadow-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </label>
+        <div className="grid gap-4 rounded-lg border border-border/80 bg-muted/20 p-4 text-sm">
           <div className="rounded-lg border border-border/70 bg-card/60 p-3 text-xs leading-5 text-muted-foreground">
             <div className="font-medium text-foreground">Available patient repos</div>
             <div className="mt-1">

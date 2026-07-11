@@ -30,6 +30,11 @@ const STATUS_TONE: Record<Incident['status'], string> = {
 
 export function IncidentTable() {
   const [selected, setSelected] = React.useState<Incident | null>(null);
+  const openIncident = React.useCallback((incident: Incident) => {
+    // Defer opening so the row click that triggered this doesn't immediately
+    // register as an outside-click and close the dialog in the same tick.
+    queueMicrotask(() => setSelected(incident));
+  }, []);
 
   return (
     <>
@@ -61,7 +66,7 @@ export function IncidentTable() {
                 {incidents.map((i) => (
                   <tr
                     key={i.id}
-                    onClick={() => setSelected(i)}
+                    onClick={() => openIncident(i)}
                     className="group cursor-pointer border-b transition-colors last:border-0 hover:bg-accent/50"
                   >
                     <td className="whitespace-nowrap px-5 py-3 font-mono font-medium">{i.id}</td>
@@ -82,7 +87,9 @@ export function IncidentTable() {
                       {SOURCE_LABEL[i.source]}
                     </td>
                     <td className="hidden whitespace-nowrap px-3 py-3 text-muted-foreground lg:table-cell">
-                      {timeAgo(i.createdAt)}
+                      <time dateTime={i.createdAt} suppressHydrationWarning>
+                        {timeAgo(i.createdAt)}
+                      </time>
                     </td>
                     <td className="px-3 py-3 text-right">
                       <ChevronRight className="ml-auto size-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />

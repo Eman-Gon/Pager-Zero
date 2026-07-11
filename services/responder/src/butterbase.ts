@@ -324,22 +324,32 @@ export async function latestVerifiedAction(
   token: string,
 ): Promise<{ action: ActionRow; incident: StoredIncidentRow } | null> {
   const client = userClient(token);
-  const incident = (
-    await client.from<StoredIncidentRow>('incidents').select('*').eq('status', 'open').maybeSingle()
-  ).data as StoredIncidentRow | null;
-  if (!incident) return null;
+  // Several incidents can be 'open' at once (one per root cause) when earlier
+  // ones were never shipped/resolved. Assuming a single open row (maybeSingle)
+  // returns null the moment a second incident exists, so Ship can't find the
+  // fix. Mirror latestDiagnoseCandidate: scan open incidents most-recent-first
+  // and return the first verified, unapplied fix.
+  const openIncidents = (
+    (await client.from<StoredIncidentRow>('incidents').select('*').eq('status', 'open')).data ?? []
+  ) as StoredIncidentRow[];
+  const sortedIncidents = [...openIncidents].sort((a, b) =>
+    String(b.opened_at ?? '').localeCompare(String(a.opened_at ?? '')),
+  );
 
-  const actions =
-    ((
-      await client
-        .from<ActionRow>('actions')
-        .select('*')
-        .eq('incident_id', incident.id)
-        .eq('verified', true)
-        .eq('applied', false)
-    ).data as ActionRow[] | null) ?? [];
-  const action = actions.filter((a) => a.candidate_fix?.path).pop();
-  return action ? { action, incident } : null;
+  for (const incident of sortedIncidents) {
+    const actions =
+      ((
+        await client
+          .from<ActionRow>('actions')
+          .select('*')
+          .eq('incident_id', incident.id)
+          .eq('verified', true)
+          .eq('applied', false)
+      ).data as ActionRow[] | null) ?? [];
+    const action = actions.filter((a) => a.candidate_fix?.path).pop();
+    if (action) return { action, incident };
+  }
+  return null;
 }
 
 // Mark the shipped fix applied and the incident resolved; MTTR in seconds (M6).

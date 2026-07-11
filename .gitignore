@@ -3,6 +3,7 @@ target-repo/
 .DS_Store
 node_modules/
 .env
+.env.bak.*
 .dev/
 frontend/.env.local
 .butterbase/*

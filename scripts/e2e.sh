@@ -16,6 +16,22 @@ set -a
 source "$ROOT/.env"
 set +a
 
+# --- patient-aware expectations ------------------------------------------------
+# Detect which patient is loaded in target-repo and set the expected incident
+# shape. Add a case here when introducing a new patient fixture.
+if [[ -f "$ROOT/target-repo/src/riskScore.ts" ]]; then
+  EXPECT_ROOT="sumRiskWeights"
+  EXPECT_BLAST_A="computeRiskScore"
+  EXPECT_BLAST_B="processClaim"
+elif [[ -f "$ROOT/target-repo/src/tax.ts" ]]; then
+  EXPECT_ROOT="computeTax"
+  EXPECT_BLAST_A="invoiceTotal"
+  EXPECT_BLAST_B="renderInvoice"
+else
+  echo "FAIL  cannot identify the loaded patient in target-repo/src" >&2
+  exit 1
+fi
+
 STEP=0
 step() {
   STEP=$((STEP + 1))
@@ -63,21 +79,22 @@ for _ in $(seq 1 45); do
 done
 [[ $(echo "$incident" | jq -r '.status // empty') == "incident" ]] || fail "sensor never reported an incident: $incident"
 root=$(echo "$incident" | jq -r '.root_cause')
-[[ "$root" == "computeTax" ]] || fail "root_cause is '$root', expected computeTax"
-echo "$incident" | jq -e '.blast_radius | index("invoiceTotal") and index("renderInvoice")' >/dev/null \
-  || fail "blast_radius missing invoiceTotal/renderInvoice: $(echo "$incident" | jq -c '.blast_radius')"
-ok "root_cause=computeTax, blast_radius=$(echo "$incident" | jq -c '.blast_radius')"
+[[ "$root" == "$EXPECT_ROOT" ]] || fail "root_cause is '$root', expected $EXPECT_ROOT"
+echo "$incident" | jq -e --arg a "$EXPECT_BLAST_A" --arg b "$EXPECT_BLAST_B" \
+  '.blast_radius | index($a) and index($b)' >/dev/null \
+  || fail "blast_radius missing $EXPECT_BLAST_A/$EXPECT_BLAST_B: $(echo "$incident" | jq -c '.blast_radius')"
+ok "root_cause=$EXPECT_ROOT, blast_radius=$(echo "$incident" | jq -c '.blast_radius')"
 
 # --- step 3: diagnose via LLM ---------------------------------------------------
 step "POST /diagnose (LLM)"
 # -m 300: diagnosis is a single LLM call (no pipeline cold-start).
 diagnosis=$(curl -sf -m 300 -X POST -H "Authorization: Bearer $TOKEN" "$RESPONDER_URL/diagnose") || fail "POST /diagnose failed"
 [[ $(echo "$diagnosis" | jq -r '.status') == "incident" ]] || fail "diagnose returned: $diagnosis"
-echo "$diagnosis" | jq -e '.diagnosis.root_cause_explanation | test("computeTax")' >/dev/null \
-  || fail "diagnosis does not name computeTax: $(echo "$diagnosis" | jq -c '.diagnosis.root_cause_explanation')"
+echo "$diagnosis" | jq -e --arg r "$EXPECT_ROOT" '.diagnosis.root_cause_explanation | test($r)' >/dev/null \
+  || fail "diagnosis does not name $EXPECT_ROOT: $(echo "$diagnosis" | jq -c '.diagnosis.root_cause_explanation')"
 runbook=$(echo "$diagnosis" | jq -r '.diagnosis.cited_runbook // empty')
 [[ -n "$runbook" ]] || fail "diagnosis has no cited_runbook"
-ok "names computeTax, severity=$(echo "$diagnosis" | jq -r '.diagnosis.severity'), cited_runbook=\"$runbook\""
+ok "names $EXPECT_ROOT, severity=$(echo "$diagnosis" | jq -r '.diagnosis.severity'), cited_runbook=\"$runbook\""
 
 # --- step 4: remediate -> verified in Daytona ------------------------------------
 step "POST /remediate (Daytona sandbox verify — takes minutes)"

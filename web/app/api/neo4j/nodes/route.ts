@@ -90,6 +90,15 @@ export async function GET(request: Request) {
           RETURN label, count(*) AS count
           ORDER BY count DESC, label ASC
         `);
+      const relResult = await session.run(
+        `
+          MATCH (a)-[r]->(b)
+          WHERE ($label = '' OR $label IN labels(a)) AND ($label = '' OR $label IN labels(b))
+          RETURN elementId(a) AS source, elementId(b) AS target, type(r) AS type
+          LIMIT 2000
+        `,
+        { label },
+      );
       const nodeResult = await session.run(
         `
           MATCH (n)
@@ -125,6 +134,11 @@ export async function GET(request: Request) {
           properties: cleanProperties(record.get('props')),
           incoming: numberValue(record.get('incoming')),
           outgoing: numberValue(record.get('outgoing')),
+        })),
+        relationships: relResult.records.map((record) => ({
+          source: String(record.get('source')),
+          target: String(record.get('target')),
+          type: String(record.get('type')),
         })),
       });
     } finally {
